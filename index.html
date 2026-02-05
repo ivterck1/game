@@ -5,12 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Gravedad Inversa - Cyberpunk Runner</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body {
             background: #0a0a0f;
             width: 100%;
@@ -19,16 +14,18 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            font-family: Arial, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
         }
-
         #game-wrapper {
             position: relative;
             width: 100%;
             height: 100%;
             max-width: 450px;
             max-height: 800px;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
         }
-
         /* Pantalla de carga */
         #loading-screen {
             position: absolute;
@@ -43,7 +40,6 @@
             align-items: center;
             z-index: 100;
         }
-
         .loading-title {
             font-size: 2rem;
             font-weight: bold;
@@ -57,42 +53,11 @@
             margin-bottom: 15px;
             line-height: 1.3;
         }
-
-        .loading-subtitle {
-            color: #00ffff;
-            font-size: 0.8rem;
-            margin-bottom: 30px;
-            text-transform: uppercase;
-            letter-spacing: 4px;
-        }
-
-        .loading-bar-container {
-            width: 150px;
-            height: 3px;
-            background: #1a1a2e;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .loading-bar {
-            width: 0%;
-            height: 100%;
-            background: linear-gradient(90deg, #ff00ff, #00ffff);
-            border-radius: 2px;
-            transition: width 0.2s ease;
-        }
-
-        .loading-percent {
-            color: #888;
-            font-size: 0.7rem;
-            margin-top: 10px;
-            font-family: monospace;
-        }
-
-        @keyframes gradient-shift {
-            0% { background-position: 0% center; }
-            100% { background-position: 200% center; }
-        }
+        .loading-subtitle { color: #00ffff; font-size: 0.8rem; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 4px; }
+        .loading-bar-container { width: 150px; height: 3px; background: #1a1a2e; border-radius: 2px; overflow: hidden; }
+        .loading-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #ff00ff, #00ffff); border-radius: 2px; transition: width 0.2s ease; }
+        .loading-percent { color: #888; font-size: 0.7rem; margin-top: 10px; font-family: monospace; }
+        @keyframes gradient-shift { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
     </style>
 </head>
 <body>
@@ -111,761 +76,570 @@
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <script>
         // ========================================
-        // SISTEMA DE AUDIO (Web Audio API)
-        // ========================================
-        // ========================================
-        // SISTEMA DE AUDIO (CORREGIDO)
+        // 1. GESTOR DE AUDIO
         // ========================================
         class AudioManager {
             constructor() {
-                this.audioContext = null;
-                this.masterGain = null;
+                this.ctx = null;
+                this.master = null;
                 this.musicPlaying = false;
-                this.initialized = false;
-                
-                // Referencias para poder detener los sonidos
                 this.bassOsc = null;
                 this.bassInterval = null;
                 this.melodyTimeout = null;
             }
 
             init() {
-                if (this.initialized) return;
-                try {
-                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    this.masterGain = this.audioContext.createGain();
-                    this.masterGain.gain.value = 0.4;
-                    this.masterGain.connect(this.audioContext.destination);
-                    this.initialized = true;
-                } catch (e) {
-                    console.log('Audio no disponible');
-                }
+                if (this.ctx) return;
+                const AC = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AC();
+                this.master = this.ctx.createGain();
+                this.master.gain.value = 0.35;
+                this.master.connect(this.ctx.destination);
             }
 
-            createOscillator(type, frequency, duration, volume = 0.2) {
-                if (!this.audioContext || !this.initialized) return;
-                try {
-                    const oscillator = this.audioContext.createOscillator();
-                    const gainNode = this.audioContext.createGain();
-                    oscillator.type = type;
-                    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
-                    gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
-                    oscillator.connect(gainNode);
-                    gainNode.connect(this.masterGain);
-                    oscillator.start();
-                    oscillator.stop(this.audioContext.currentTime + duration);
-                } catch (e) {}
+            playTone(type, freq, duration, vol, slideTo = null) {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, this.ctx.currentTime + duration);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.master);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
             }
 
-            playGravitySwitch() {
-                this.createOscillator('sawtooth', 150, 0.1, 0.2);
-                setTimeout(() => this.createOscillator('sine', 300, 0.08, 0.15), 30);
+            playGravity() { this.playTone('sawtooth', 150, 0.15, 0.2, 300); }
+            playDeath() { this.playTone('sawtooth', 200, 0.5, 0.3, 50); }
+            playScore() { 
+                this.playTone('square', 800, 0.1, 0.1); 
+                setTimeout(() => this.playTone('square', 1200, 0.1, 0.1), 80);
             }
-
-            playDeath() {
-                // Sonido de "fallo" descendente
-                if (this.audioContext && this.initialized) {
-                    const osc = this.audioContext.createOscillator();
-                    const gain = this.audioContext.createGain();
-                    osc.frequency.setValueAtTime(200, this.audioContext.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.4);
-                    gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-                    gain.gain.linearRampToValueAtTime(0, this.audioContext.currentTime + 0.4);
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start();
-                    osc.stop(this.audioContext.currentTime + 0.4);
-                }
+            playCollect() {
+                this.playTone('sine', 1200, 0.1, 0.2);
+                setTimeout(() => this.playTone('sine', 1800, 0.2, 0.2), 50);
             }
-
-            playScore() {
-                this.createOscillator('square', 600, 0.06, 0.12);
-                setTimeout(() => this.createOscillator('square', 900, 0.06, 0.1), 60);
+            playShield() { // Sonido PowerUp
+                this.playTone('sine', 400, 0.3, 0.2, 800);
+                setTimeout(() => this.playTone('square', 600, 0.3, 0.1, 1000), 100);
+            }
+            playSmash() { // Sonido romper obstáculo
+                this.playTone('sawtooth', 100, 0.1, 0.3, 50);
             }
 
             startMusic() {
-                if (!this.audioContext || !this.initialized || this.musicPlaying) return;
+                if (!this.ctx || this.musicPlaying) return;
                 this.musicPlaying = true;
-
-                const bassFreq = 60;
-                const melodyFreqs = [262, 330, 392, 523, 392, 330, 262, 196];
-                let noteIndex = 0;
-
-                // BAJO (Guardamos la referencia en this.bassOsc)
-                this.bassOsc = this.audioContext.createOscillator();
-                const bassGain = this.audioContext.createGain();
-                this.bassOsc.type = 'sawtooth';
+                const bassFreq = 55;
+                
+                this.bassOsc = this.ctx.createOscillator();
+                this.bassOsc.type = 'triangle';
                 this.bassOsc.frequency.value = bassFreq;
-                bassGain.gain.value = 0.12;
-                this.bassOsc.connect(bassGain);
-                bassGain.connect(this.masterGain);
+                const bGain = this.ctx.createGain();
+                bGain.gain.value = 0.3;
+                this.bassOsc.connect(bGain);
+                bGain.connect(this.master);
                 this.bassOsc.start();
 
-                // Modulación del bajo
                 this.bassInterval = setInterval(() => {
-                    if (this.musicPlaying && this.audioContext && this.bassOsc) {
-                        try {
-                            this.bassOsc.frequency.setValueAtTime(
-                                bassFreq + Math.sin(this.audioContext.currentTime * 3) * 8,
-                                this.audioContext.currentTime
-                            );
-                        } catch(e) {}
+                    if (this.musicPlaying && this.bassOsc) {
+                        this.bassOsc.frequency.setValueAtTime(bassFreq + Math.sin(this.ctx.currentTime * 4) * 5, this.ctx.currentTime);
                     }
-                }, 40);
+                }, 50);
 
-                const playMelody = () => {
-                    if (!this.musicPlaying || !this.audioContext) return;
-
-                    const osc = this.audioContext.createOscillator();
-                    const gain = this.audioContext.createGain();
-                    osc.type = 'square';
-                    osc.frequency.value = melodyFreqs[noteIndex % melodyFreqs.length];
-                    gain.gain.value = 0.06;
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start();
-                    osc.stop(this.audioContext.currentTime + 0.15);
-
-                    noteIndex++;
-                    this.melodyTimeout = setTimeout(playMelody, 200);
+                const notes = [220, 261, 329, 261, 220, 196, 220, 0];
+                let idx = 0;
+                const loop = () => {
+                    if (!this.musicPlaying) return;
+                    const n = notes[idx % notes.length];
+                    if (n > 0) this.playTone('square', n, 0.15, 0.05);
+                    idx++;
+                    this.melodyTimeout = setTimeout(loop, 250);
                 };
-
-                this.melodyTimeout = setTimeout(playMelody, 400);
+                loop();
             }
 
             stopMusic() {
                 this.musicPlaying = false;
-                
-                // DETENER EL BAJO CORRECTAMENTE
-                if (this.bassOsc) {
-                    try {
-                        this.bassOsc.stop();
-                        this.bassOsc.disconnect();
-                    } catch(e) {}
-                    this.bassOsc = null;
-                }
-
-                if (this.bassInterval) {
-                    clearInterval(this.bassInterval);
-                    this.bassInterval = null;
-                }
-
-                if (this.melodyTimeout) {
-                    clearTimeout(this.melodyTimeout);
-                    this.melodyTimeout = null;
-                }
+                if (this.bassOsc) { try { this.bassOsc.stop(); } catch(e){} this.bassOsc = null; }
+                clearInterval(this.bassInterval);
+                clearTimeout(this.melodyTimeout);
             }
         }
-
-        const audioManager = new AudioManager();
+        const audio = new AudioManager();
 
         // ========================================
-        // PRE-GENERAR TEXTURAS
+        // 2. TEXTURAS Y GRÁFICOS
         // ========================================
-        function generateGameTextures(scene) {
-            // Textura de fondo
-            const bgGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
-            bgGraphics.fillStyle(0x0a0a0f, 1);
-            bgGraphics.fillRect(0, 0, 450, 800);
+        function genTextures(scene) {
+            const make = (k, w, h, fn) => {
+                const g = scene.make.graphics({ add: false });
+                fn(g);
+                g.generateTexture(k, w, h);
+            };
 
-            // Edificios
-            for (let i = 0; i < 15; i++) {
-                const x = i * 40 + 10;
-                const h = Phaser.Math.Between(80, 200);
-                const brightness = 25 + Math.floor(h / 200 * 20);
-                bgGraphics.fillStyle(Phaser.Display.Color.GetColor(brightness, brightness, brightness + 15), 1);
-                bgGraphics.fillRect(x, 800 - h, 30, h);
+            // GEMA
+            make('gem', 30, 30, g => {
+                g.fillStyle(0xffffff, 1); 
+                g.beginPath();
+                g.moveTo(15, 0); g.lineTo(30, 15); g.lineTo(15, 30); g.lineTo(0, 15);
+                g.closePath();
+                g.fillPath();
+                g.lineStyle(2, 0x000000, 0.5); g.strokePath();
+            });
 
-                // Ventanas
-                bgGraphics.fillStyle(0x00ffff, 0.25);
-                for (let row = 0; row < h / 25; row++) {
-                    if (Math.random() > 0.4) {
-                        bgGraphics.fillRect(x + 4, 800 - h + 15 + row * 22, 8, 12);
-                    }
+            // ESCUDO ITEM (Anillo)
+            make('shield_item', 40, 40, g => {
+                g.lineStyle(4, 0x00ffff, 1);
+                g.strokeCircle(20, 20, 15);
+                g.fillStyle(0x00ffff, 0.3);
+                g.fillCircle(20, 20, 10);
+            });
+
+            // AURA ESCUDO (Jugador)
+            make('shield_aura', 60, 60, g => {
+                g.lineStyle(2, 0x00ffff, 1);
+                g.strokeCircle(30, 30, 28);
+                g.fillStyle(0x00ffff, 0.2);
+                g.fillCircle(30, 30, 28);
+            });
+
+            // Fondo
+            make('bg', 450, 800, g => {
+                g.fillStyle(0x0a0a0f, 1); g.fillRect(0,0,450,800);
+                for(let i=0; i<20; i++) {
+                    const h = Phaser.Math.Between(50, 250);
+                    const c = Phaser.Display.Color.GetColor(20, 20, 40 + h/5);
+                    g.fillStyle(c, 1); g.fillRect(i*25, 800-h, 24, h);
+                    g.fillStyle(0xffffff, 0.1);
+                    if(Math.random()>0.5) g.fillRect(i*25+8, 800-h+10, 4, 8);
                 }
-            }
-            bgGraphics.generateTexture('bg_texture', 450, 800);
+            });
 
-            // Textura foreground
-            const fgGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
-            fgGraphics.fillStyle(0x1a1a2e, 0.9);
-            fgGraphics.fillRect(0, 0, 450, 800);
+            // Rejilla
+            make('fg', 450, 800, g => {
+                g.lineStyle(1, 0xffffff, 0.1);
+                for(let i=0; i<800; i+=40) g.lineBetween(0,i,450,i);
+                for(let i=0; i<450; i+=40) g.lineBetween(i,0,i,800);
+            });
 
-            fgGraphics.lineStyle(1, 0xff00ff, 0.2);
-            for (let i = 0; i < 450; i += 30) {
-                fgGraphics.lineBetween(i, 0, i, 800);
-            }
-            for (let i = 0; i < 800; i += 30) {
-                fgGraphics.lineBetween(0, i, 450, i);
-            }
-            fgGraphics.generateTexture('fg_texture', 450, 800);
+            // Jugador
+            make('player', 40, 40, g => {
+                g.fillStyle(0xffffff, 1); g.fillCircle(20,20,20);
+                g.fillStyle(0x000000, 1); g.fillCircle(20,20,15);
+                g.fillStyle(0xffffff, 1); g.fillRect(14,16,5,3); g.fillRect(21,16,5,3);
+            });
 
-            // Textura jugador
-            const playerG = scene.make.graphics({ x: 0, y: 0, add: false });
-            playerG.fillStyle(0xff00ff, 0.25);
-            playerG.fillCircle(20, 20, 22);
-            playerG.fillStyle(0x1a1a2e, 1);
-            playerG.fillCircle(20, 20, 16);
-            playerG.lineStyle(2, 0x00ffff, 1);
-            playerG.strokeCircle(20, 20, 16);
-            playerG.fillStyle(0x00ffff, 1);
-            playerG.fillRect(14, 16, 5, 3);
-            playerG.fillRect(21, 16, 5, 3);
-            playerG.fillStyle(0xffffff, 1);
-            playerG.fillRect(15, 17, 2, 1.5);
-            playerG.fillRect(22, 17, 2, 1.5);
-            playerG.generateTexture('player', 40, 40);
-
-            // Textura obstáculo顶部
-            const obsTopG = scene.make.graphics({ x: 0, y: 0, add: false });
-            obsTopG.fillStyle(0xff00ff, 0.25);
-            obsTopG.fillRect(0, 0, 40, 120);
-            obsTopG.fillStyle(0x1a1a2e, 1);
-            obsTopG.fillRect(2, 2, 36, 116);
-            obsTopG.lineStyle(2, 0xff00ff, 1);
-            obsTopG.strokeRect(2, 2, 36, 116);
-            obsTopG.lineStyle(1, 0xff00ff, 0.4);
-            for (let i = 0; i < 116; i += 18) {
-                obsTopG.lineBetween(2, i + 9, 38, i + 9);
-            }
-            obsTopG.generateTexture('obstacle_top', 40, 120);
-
-            // Textura obstáculo底部
-            const obsBottomG = scene.make.graphics({ x: 0, y: 0, add: false });
-            obsBottomG.fillStyle(0x00ffff, 0.25);
-            obsBottomG.fillRect(0, 0, 40, 120);
-            obsBottomG.fillStyle(0x1a1a2e, 1);
-            obsBottomG.fillRect(2, 2, 36, 116);
-            obsBottomG.lineStyle(2, 0x00ffff, 1);
-            obsBottomG.strokeRect(2, 2, 36, 116);
-            obsBottomG.lineStyle(1, 0x00ffff, 0.4);
-            for (let i = 0; i < 116; i += 18) {
-                obsBottomG.lineBetween(2, i + 9, 38, i + 9);
-            }
-            obsBottomG.generateTexture('obstacle_bottom', 40, 120);
-
-            // Textura partícula
-            const partG = scene.make.graphics({ x: 0, y: 0, add: false });
-            partG.fillStyle(0xff00ff, 0.8);
-            partG.fillCircle(4, 4, 4);
-            partG.generateTexture('particle', 8, 8);
+            // Obstáculos
+            make('obs_top', 40, 120, g => {
+                g.fillStyle(0xffffff, 1); g.fillRect(0,0,40,120);
+                g.fillStyle(0x000000, 1); g.fillRect(3,3,34,114);
+            });
+            make('obs_bot', 40, 120, g => {
+                g.fillStyle(0xffffff, 1); g.fillRect(0,0,40,120);
+                g.fillStyle(0x000000, 1); g.fillRect(3,3,34,114);
+            });
         }
 
         // ========================================
-        // ESCENA DE OPENING
+        // 3. INTRO SCENE
         // ========================================
-        class OpeningScene extends Phaser.Scene {
-            constructor() {
-                super({ key: 'OpeningScene' });
-            }
-
+        class IntroScene extends Phaser.Scene {
+            constructor() { super('IntroScene'); }
             create() {
-                // Fondo
-                this.add.rectangle(225, 400, 450, 800, 0x0a0a0f);
-
-                // Partículas
-                for (let i = 0; i < 30; i++) {
-                    const p = this.add.circle(
-                        Phaser.Math.Between(0, 450),
-                        Phaser.Math.Between(0, 800),
-                        Phaser.Math.Between(1, 2),
-                        0xff00ff, 0.4
-                    );
-                    this.tweens.add({
-                        targets: p, alpha: 0, duration: Phaser.Math.Between(1500, 2500),
-                        repeat: -1, delay: Phaser.Math.Between(0, 1500)
-                    });
+                const cx = 225, cy = 400;
+                this.add.rectangle(cx, cy, 450, 800, 0x2a004f); // Fondo Morado
+                
+                // Rayos
+                const sun = this.add.graphics({ x: cx, y: cy });
+                sun.fillStyle(0xff00ff, 0.1);
+                for(let i=0; i<12; i++) {
+                    sun.slice(0,0,600, Phaser.Math.DegToRad(i*30), Phaser.Math.DegToRad(i*30+15));
+                    sun.fillPath();
                 }
+                this.tweens.add({ targets: sun, angle: 360, duration: 8000, repeat: -1 });
 
-                // Título
-                const title = this.add.text(225, 280, 'GRAVEDAD\nINVERSA', {
-                    fontSize: '36px', fontFamily: 'Arial Black', color: '#ff00ff',
-                    align: 'center', stroke: '#00ffff', strokeThickness: 3
-                }).setOrigin(0.5);
+                // Títulos
+                const t1 = this.add.text(cx, 200, 'GRAVEDAD', { fontSize: '52px', fontFamily: 'Arial Black', color: '#00ffff', stroke: '#2a004f', strokeThickness: 8 }).setOrigin(0.5).setScale(0);
+                const t2 = this.add.text(cx, 260, 'INVERSA', { fontSize: '68px', fontFamily: 'Arial Black', color: '#ff006e', stroke: '#ffffff', strokeThickness: 6 }).setOrigin(0.5).setScale(0);
+                
+                this.tweens.add({ targets: t1, scale: 1, ease: 'Bounce', duration: 600, delay: 100 });
+                this.tweens.add({ targets: t2, scale: 1, ease: 'Bounce', duration: 600, delay: 300 });
 
-                this.tweens.add({
-                    targets: title, alpha: { from: 1, to: 0.6 }, duration: 400,
-                    yoyo: true, repeat: -1
-                });
+                // Botón Start
+                const start = this.add.text(cx, 650, '> TOCA PARA INICIAR <', { fontSize: '20px', fontFamily: 'Arial Black', color: '#ffffff' }).setOrigin(0.5);
+                this.tweens.add({ targets: start, alpha: 0.2, duration: 600, yoyo: true, repeat: -1 });
 
-                // Subtítulo
-                const subtitle = this.add.text(225, 440, '', {
-                    fontSize: '14px', fontFamily: 'monospace', color: '#00ffff',
-                    letterSpacing: '6px'
-                }).setOrigin(0.5);
-
-                let subIndex = 0;
-                const subText = 'CYBERPUNK RUNNER';
-                this.time.addEvent({
-                    delay: 60, callback: () => {
-                        if (subIndex < subText.length) {
-                            subtitle.setText(subText.substring(0, subIndex + 1));
-                            subIndex++;
-                        }
-                    }, repeat: subText.length - 1
-                });
-
-                // Silueta jugador
-                const px = 225, py = 350;
-                const sil = this.add.graphics();
-                sil.fillStyle(0x00ffff, 0.6);
-                sil.fillCircle(px, py - 25, 12);
-                sil.fillStyle(0xff00ff, 0.6);
-                sil.fillRect(px - 10, py - 10, 20, 25);
-                sil.fillStyle(0x00ffff, 0.6);
-                sil.fillRect(px - 8, py + 15, 6, 20);
-                sil.fillRect(px + 2, py + 15, 6, 20);
-
-                this.tweens.add({
-                    targets: sil, y: py - 8, duration: 800,
-                    yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-                });
-
-                // Scan line
-                const scan = this.add.rectangle(225, 0, 450, 2, 0x00ffff, 0.4);
-                this.tweens.add({
-                    targets: scan, y: 800, duration: 1800,
-                    repeat: -1, ease: 'Linear'
-                });
-
-                // Instrucciones
-                const instr = this.add.text(225, 600, 'TOCA PARA INICIAR', {
-                    fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
-                    backgroundColor: '#1a1a2e', padding: { x: 15, y: 8 }
-                }).setOrigin(0.5);
-
-                this.tweens.add({
-                    targets: instr, scale: { from: 1, to: 1.08 }, alpha: { from: 1, to: 0.4 },
-                    duration: 600, yoyo: true, repeat: -1
-                });
-
-                // Input
-                this.input.once('pointerdown', () => this.startGame());
-                this.input.keyboard.once('keydown-SPACE', () => this.startGame());
-            }
-
-            startGame() {
-                this.cameras.main.fade(400, 0, 0, 0);
-                this.time.delayedCall(450, () => {
-                    this.scene.start('GameScene');
-                });
+                const go = () => {
+                    this.cameras.main.flash(300, 255, 0, 255);
+                    setTimeout(() => this.scene.start('GameScene'), 300);
+                };
+                this.input.once('pointerdown', go);
+                this.input.keyboard.once('keydown-SPACE', go);
             }
         }
 
         // ========================================
-        // ESCENA PRINCIPAL DEL JUEGO
-        // ========================================
-        // ========================================
-        // ESCENA PRINCIPAL DEL JUEGO (CORREGIDA)
+        // 4. JUEGO (6 ZONAS + GEMAS + ESCUDO)
         // ========================================
         class GameScene extends Phaser.Scene {
-            constructor() {
-                super({ key: 'GameScene' });
-            }
-
-            preload() {
-                generateGameTextures(this);
-            }
-
+            constructor() { super('GameScene'); }
+            preload() { genTextures(this); }
+            
             create() {
-                this.gameSpeed = 300;
+                this.speed = 300;
                 this.score = 0;
-                this.distanceReal = 0; // NUEVO: Para llevar la cuenta real de metros
-                this.isGravityInverted = false;
-                this.isGameOver = false;
-                this.obstacles = [];
-                this.lastObstacleTime = 0;
-                this.lastScore = -1;
-
-                // Fondo parallax
-                this.bgLayer = this.add.tileSprite(225, 400, 450, 800, 'bg_texture');
-                this.fgLayer = this.add.tileSprite(225, 400, 450, 800, 'fg_texture');
-                this.fgLayer.alpha = 0.4;
-
-                // Líneas de límite
-                this.add.rectangle(225, 22, 450, 3, 0xff00ff).setAlpha(0.8);
-                this.add.rectangle(225, 778, 450, 3, 0x00ffff).setAlpha(0.8);
-
-                // Jugador (Aseguramos que se dibuje por encima de todo con setDepth)
-                this.player = this.add.sprite(80, 740, 'player');
-                this.player.setOrigin(0.5, 0.5);
-                this.player.setDepth(10); // CORRECCIÓN: El jugador siempre visible
-
-                // Animación de flotación
-                this.baseY = 740;
-                this.floatOffset = 0;
-                this.floatSpeed = 0.003;
-
-                // --- UI / INTERFAZ (CORREGIDA: MOVIDA A LA DERECHA) ---
-                const uiX = 300; // Movemos la UI a la derecha (antes estaba en 15)
+                this.dist = 0;
+                this.gemCount = 0;
+                this.inv = false;
+                this.over = false;
+                this.obs = [];
+                this.gems = [];
+                this.shields = []; // Array items escudo
+                this.lastSpawn = 0;
                 
-                this.scorePanel = this.add.graphics();
-                this.scorePanel.fillStyle(0x1a1a2e, 0.5); // CORRECCIÓN: Más transparente (0.5 en vez de 0.85)
-                this.scorePanel.fillRoundedRect(uiX, 40, 130, 35, 8);
-                this.scorePanel.lineStyle(2, 0xff00ff, 0.8);
-                this.scorePanel.strokeRoundedRect(uiX, 40, 130, 35, 8);
-                this.scorePanel.setDepth(5); // UI detrás del jugador si coinciden, pero visible
+                // Sistema de Escudo
+                this.shieldActive = false;
+                this.shieldTimer = null;
+                
+                // Nivel inicial
+                this.currentLevel = 1; 
 
-                this.add.text(uiX + 7, 46, 'DISTANCIA', {
-                    fontSize: '10px', fontFamily: 'monospace', color: '#00ffff'
-                }).setDepth(6);
+                // Capas
+                this.bg = this.add.tileSprite(225, 400, 450, 800, 'bg');
+                this.fg = this.add.tileSprite(225, 400, 450, 800, 'fg').setAlpha(0.4);
+                
+                this.lineTop = this.add.rectangle(225, 20, 450, 4, 0xff00ff).setDepth(2);
+                this.lineBot = this.add.rectangle(225, 780, 450, 4, 0x00ffff).setDepth(2);
 
-                this.scoreValue = this.add.text(uiX + 7, 58, '0m', {
-                    fontSize: '18px', fontFamily: 'Arial Black', color: '#ff00ff'
-                }).setDepth(6);
+                // Jugador
+                this.player = this.add.sprite(80, 740, 'player').setDepth(10);
+                this.player.setTint(0xff00ff); 
+                this.baseY = 740;
+                this.floatY = 0;
 
-                // Indicador de gravedad (lo movemos un poco para que cuadre)
-                this.gravityInd = this.add.text(uiX - 10, 46, '⬇ SUELO', {
-                    fontSize: '12px', fontFamily: 'monospace', color: '#00ffff'
-                }).setOrigin(1, 0).setDepth(6);
+                // Visual del Escudo (Aura)
+                this.shieldAura = this.add.sprite(80, 740, 'shield_aura').setDepth(11).setAlpha(0);
 
-                // Efecto pulse en puntuación
-                this.tweens.add({
-                    targets: this.scoreValue, scale: { from: 1, to: 1.12 }, duration: 250,
-                    yoyo: true, repeat: -1
-                });
+                // Estela
+                this.time.addEvent({ delay: 50, loop: true, callback: () => {
+                    if(this.over) return;
+                    const g = this.add.sprite(this.player.x, this.player.y, 'player')
+                        .setOrigin(0.5).setAlpha(0.4).setTint(this.player.tintTopLeft).setScale(1, this.player.scaleY).setDepth(9);
+                    this.tweens.add({ targets: g, alpha: 0, scale: 0, duration: 300, onComplete: () => g.destroy() });
+                }});
 
-                // Input
-                this.input.on('pointerdown', () => this.switchGravity());
-                this.input.keyboard.on('keydown-SPACE', () => this.switchGravity());
+                // UI
+                const uiX = 430;
+                this.scoreTxt = this.add.text(uiX, 40, '0m', { fontSize: '28px', fontFamily: 'Arial Black', color: '#ff00ff', align: 'right' }).setOrigin(1, 0).setDepth(20);
+                this.add.text(uiX, 70, 'DISTANCIA', { fontSize: '10px', color: '#00ffff' }).setOrigin(1, 0).setDepth(20);
+                this.gemTxt = this.add.text(20, 40, '💎 0', { fontSize: '24px', fontFamily: 'Arial Black', color: '#00ff00' }).setDepth(20);
 
-                // Audio
-                audioManager.init();
-                audioManager.startMusic();
-                this.time.delayedCall(200, () => audioManager.playScore());
+                // Controles
+                this.input.on('pointerdown', () => this.flip());
+                this.input.keyboard.on('keydown-SPACE', () => this.flip());
+
+                audio.init();
+                audio.startMusic();
             }
 
             update(time, delta) {
-                if (this.isGameOver) return;
+                if (this.over) return;
 
-                // Parallax
-                this.bgLayer.tilePositionX += this.gameSpeed * delta / 1000 * 0.25;
-                this.fgLayer.tilePositionX += this.gameSpeed * delta / 1000 * 0.4;
+                this.bg.tilePositionX += this.speed * delta / 1000 * 0.2;
+                this.fg.tilePositionX += this.speed * delta / 1000 * 0.5;
 
-                // Animación flotación
-                this.floatOffset += this.floatSpeed * delta;
-                this.player.y = this.baseY + Math.sin(this.floatOffset) * 4;
-
-                // --- PUNTUACIÓN (CORREGIDA) ---
-                // Sumamos distancia basada en la velocidad y el tiempo transcurrido
-                this.distanceReal += (this.gameSpeed * delta / 1000) / 5; // Dividido por 5 para que no suba demasiado rápido
-                this.score = Math.floor(this.distanceReal);
-                this.scoreValue.setText(this.score + 'm');
-
-                // Aumentar velocidad del juego progresivamente
-                this.gameSpeed += 0.05 * (delta / 16);
-
-                // Generar obstáculos
-                if (time - this.lastObstacleTime > 1800 - Math.min(this.score * 3, 800)) {
-                    this.createObstacle();
-                    this.lastObstacleTime = time;
+                this.floatY += 0.005 * delta;
+                this.player.y = this.baseY + Math.sin(this.floatY) * 5;
+                
+                // Mover Aura con jugador
+                if (this.shieldActive) {
+                    this.shieldAura.x = this.player.x;
+                    this.shieldAura.y = this.player.y;
+                    this.shieldAura.angle += 2; // Rotación efecto
                 }
 
-                // Actualizar obstáculos
-                for (let i = this.obstacles.length - 1; i >= 0; i--) {
-                    const obs = this.obstacles[i];
-                    obs.x -= (this.gameSpeed + this.score * 0.3) * delta / 1000;
+                this.dist += (this.speed * delta / 1000) / 5;
+                this.score = Math.floor(this.dist);
+                this.scoreTxt.setText(this.score + 'm');
+                this.speed += 0.03 * (delta/16);
 
-                    if (obs.x < -50) {
-                        obs.destroy();
-                        this.obstacles.splice(i, 1);
-                    }
-                }
+                this.checkLevelProgression();
 
-                // Colisiones con obstáculos
-                for (const obs of this.obstacles) {
-                    if (this.checkCollision(this.player, obs)) {
-                        this.handleCollision();
-                        return;
-                    }
+                if (time - this.lastSpawn > 1800 - Math.min(this.score*2, 800)) {
+                    this.spawnObs();
+                    this.lastSpawn = time;
                 }
 
-                // Límites
-                if (this.player.y < 45) {
-                    this.player.y = 45;
-                    if (this.physics.world.gravity.y < 0) {
-                        this.player.body.velocity.y = 100;
-                    }
-                }
-                if (this.player.y > 755) {
-                    this.player.y = 755;
-                    if (this.physics.world.gravity.y > 0) {
-                        this.player.body.velocity.y = -100;
-                    }
-                }
+                this.updateEntities(delta);
 
-                // Sonido cada 100m
-                if (this.score > 0 && this.score % 100 === 0 && this.score !== this.lastScore) {
-                    this.lastScore = this.score;
-                    audioManager.playScore();
-                }
-
-                // Partículas de estela
-                if (Math.random() > 0.65) {
-                    const p = this.add.circle(this.player.x - 15, this.player.y, Phaser.Math.Between(2, 4), 0xff00ff, 0.6);
-                    this.tweens.add({
-                        targets: p, x: p.x - 40, alpha: 0, scale: 0, duration: 400,
-                        onComplete: () => p.destroy()
-                    });
-                }
+                if(this.player.y < 45) this.player.y = 45;
+                if(this.player.y > 755) this.player.y = 755;
             }
 
-            createObstacle() {
+            checkLevelProgression() {
+                if (this.score >= 500 && this.currentLevel === 1) { this.currentLevel = 2; this.levelUpEffect("ALERTA ROJA", 0xff0000, 0xffaa00); }
+                else if (this.score >= 1000 && this.currentLevel === 2) { this.currentLevel = 3; this.levelUpEffect("ZONA MATRIX", 0x00ff00, 0x003300); }
+                else if (this.score >= 1500 && this.currentLevel === 3) { this.currentLevel = 4; this.levelUpEffect("EDAD DE ORO", 0xffd700, 0xffaa00); }
+                else if (this.score >= 2000 && this.currentLevel === 4) { this.currentLevel = 5; this.levelUpEffect("CERO ABSOLUTO", 0x00ffff, 0x0000ff); }
+                else if (this.score >= 2500 && this.currentLevel === 5) { this.currentLevel = 6; this.levelUpEffect("EL VACÍO", 0xffffff, 0x000000); }
+            }
+
+            levelUpEffect(text, c1, c2) {
+                this.cameras.main.flash(500, 255, 255, 255);
+                this.applyPalette(c1, c2);
+                const lvlText = this.add.text(225, 300, text, {
+                    fontSize: '42px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#000000', strokeThickness: 6, align: 'center'
+                }).setOrigin(0.5).setDepth(30).setScale(0);
+                this.tweens.add({
+                    targets: lvlText, scale: 1.2, alpha: 0, duration: 2500, ease: 'Power2',
+                    onComplete: () => lvlText.destroy()
+                });
+                audio.playCollect();
+            }
+
+            applyPalette(c1, c2) {
+                this.bg.setTint(c2);
+                this.fg.setTint(c1);
+                this.lineTop.setFillStyle(c1);
+                this.lineBot.setFillStyle(c1);
+                this.scoreTxt.setColor('#' + c1.toString(16).padStart(6, '0'));
+                this.player.setTint(c1);
+                this.obs.forEach(o => o.setTint(c1));
+                this.gems.forEach(g => g.setTint(c1));
+            }
+
+            spawnObs() {
                 const isTop = Math.random() > 0.5;
-                const h = Phaser.Math.Between(70, 160);
-                const y = isTop ? 35 + h / 2 : 800 - 35 - h / 2;
-
-                const texture = isTop ? 'obstacle_top' : 'obstacle_bottom';
-                const obs = this.add.sprite(480, y, texture);
-                obs.setOrigin(0.5, 0.5);
-                obs.setAlpha(0);
-                // Obstaculos detrás del jugador y UI
-                obs.setDepth(1); 
-
-                this.tweens.add({
-                    targets: obs, alpha: 1, duration: 150
-                });
-
-                if (h < 80) {
-                    obs.setScale(1, h / 100);
-                }
-
-                this.obstacles.push(obs);
-            }
-
-            switchGravity() {
-                if (this.isGameOver) return;
-
-                this.isGravityInverted = !this.isGravityInverted;
-                this.physics.world.gravity.y = this.isGravityInverted ? -700 : 700;
-
-                this.cameras.main.shake(80, 0.004);
-
-                this.tweens.add({
-                    targets: this.player, scaleY: -1, duration: 80, ease: 'Linear'
-                });
-
-                for (let i = 0; i < 8; i++) {
-                    const p = this.add.circle(
-                        this.player.x, this.player.y,
-                        Phaser.Math.Between(3, 6),
-                        this.isGravityInverted ? 0x00ffff : 0xff00ff, 0.7
-                    );
-                    this.tweens.add({
-                        targets: p,
-                        x: p.x + Phaser.Math.Between(-25, 25),
-                        y: p.y + Phaser.Math.Between(-25, 25),
-                        alpha: 0, scale: 0, duration: 350,
-                        onComplete: () => p.destroy()
-                    });
-                }
-
-                if (this.isGravityInverted) {
-                    this.gravityInd.setText('⬆ TECHO').setColor('#ff00ff');
-                    this.baseY = 60;
-                } else {
-                    this.gravityInd.setText('⬇ SUELO').setColor('#00ffff');
-                    this.baseY = 740;
-                }
-
-                audioManager.playGravitySwitch();
-            }
-
-            checkCollision(player, obstacle) {
-                const px = player.x, py = player.y;
-                const ox = obstacle.x, oy = obstacle.y;
-                const pr = 14, orX = 16, orY = obstacle.displayHeight / 2 - 5;
-
-                return Math.abs(px - ox) < (pr + orX) && Math.abs(py - oy) < (pr + orY);
-            }
-
-            handleCollision() {
-                if (this.isGameOver) return;
-                this.isGameOver = true;
-
-                this.physics.pause();
-                audioManager.playDeath();
-                audioManager.stopMusic();
-
-                this.cameras.main.shake(250, 0.018);
-                // Mantenemos el fade a negro brevemente
-                this.cameras.main.fade(250, 0, 0, 0);
-
-                for (let i = 0; i < 16; i++) {
-                    const p = this.add.circle(
-                        this.player.x, this.player.y,
-                        Phaser.Math.Between(4, 10), 0xff00ff, 0.7
-                    );
-                    this.tweens.add({
-                        targets: p,
-                        x: p.x + Phaser.Math.Between(-80, 80),
-                        y: p.y + Phaser.Math.Between(-80, 80),
-                        alpha: 0, scale: 0, duration: 800,
-                        onComplete: () => p.destroy()
-                    });
-                }
-
-                this.player.setVisible(false);
-
-                this.time.delayedCall(400, () => this.showGameOver());
-            }
-
-            showGameOver() {
-                // Recuperar visión
-                this.cameras.main.fadeIn(250, 0, 0, 0);
-
-                // Overlay
-                const overlay = this.add.rectangle(225, 400, 450, 800, 0x0a0a0f, 0.92);
-                overlay.setDepth(20);
-
-                // Texto GAME OVER
-                const goText = this.add.text(225, 250, 'GAME OVER', {
-                    fontSize: '44px', fontFamily: 'Arial Black, Impact',
-                    color: '#ff0044', stroke: '#ffffff', strokeThickness: 6, align: 'center'
-                }).setOrigin(0.5).setDepth(21);
-
-                this.tweens.add({
-                    targets: goText, x: { from: 230, to: 220 }, duration: 40,
-                    yoyo: true, repeat: 4
-                });
-
-                // Texto Puntuación
-                const scoreText = this.add.text(225, 380, 'DISTANCIA: ' + this.score + 'm', {
-                    fontSize: '22px', fontFamily: 'Arial Black', color: '#00ffff'
-                }).setOrigin(0.5).setDepth(21);
-
-                // Nuevo Récord
-                if (this.score > (this.bestScore || 0)) {
-                    this.bestScore = this.score;
-                    const recordText = this.add.text(225, 420, '¡NUEVO RÉCORD!', {
-                        fontSize: '18px', fontFamily: 'Arial Black', color: '#ffff00'
-                    }).setOrigin(0.5).setDepth(21);
-
-                    this.tweens.add({
-                        targets: recordText, scale: { from: 1, to: 1.15 }, duration: 250,
-                        yoyo: true, repeat: -1
-                    });
-                }
-
-                // === BOTÓN REINICIAR MEJORADO ===
-                const btnX = 225, btnY = 500;
+                const h = Phaser.Math.Between(80, 180);
+                const y = isTop ? 30 + h/2 : 770 - h/2;
                 
-                // Usamos un contenedor o un rectángulo simple interactivo
-                const btnBg = this.add.rectangle(btnX, btnY, 200, 50, 0xff00ff)
-                    .setInteractive({ useHandCursor: true })
-                    .setDepth(21);
+                const obs = this.add.sprite(500, y, isTop ? 'obs_top' : 'obs_bot').setAlpha(0).setDepth(5);
                 
-                // Borde del botón
-                const btnStroke = this.add.graphics().setDepth(21);
-                btnStroke.lineStyle(4, 0xffffff, 1);
-                btnStroke.strokeRect(btnX - 100, btnY - 25, 200, 50);
+                let tint = 0xff00ff;
+                if (this.currentLevel === 2) tint = 0xff0000;
+                else if (this.currentLevel === 3) tint = 0x00ff00;
+                else if (this.currentLevel === 4) tint = 0xffd700;
+                else if (this.currentLevel === 5) tint = 0x00ffff;
+                else if (this.currentLevel === 6) tint = 0xffffff;
 
-                const btnText = this.add.text(btnX, btnY, 'REINICIAR', {
-                    fontSize: '20px', fontFamily: 'Arial Black', color: '#ffffff'
-                }).setOrigin(0.5).setDepth(21);
+                obs.setTint(tint);
+                if (h < 100) obs.setScale(1, h/120);
+                this.tweens.add({ targets: obs, alpha: 1, duration: 200 });
+                this.obs.push(obs);
 
-                // Animación simple al pulsar el botón
-                btnBg.on('pointerdown', () => {
-                    btnBg.setFillStyle(0x00ffff); // Cambia color al pulsar
-                    audioManager.playScore();
-                    this.scene.restart();
-                });
+                // Lógica de Spawn de Ítems
+                const rand = Math.random();
+                if(rand < 0.05) { // 5% Probabilidad ESCUDO
+                    const itemY = isTop ? 700 : 100;
+                    const shield = this.add.sprite(500 + Phaser.Math.Between(0, 50), itemY, 'shield_item').setDepth(6);
+                    this.tweens.add({ targets: shield, scale: 1.2, yoyo: true, repeat: -1, duration: 500 });
+                    this.shields.push(shield);
+                } else if (rand < 0.45) { // 40% Probabilidad GEMA
+                    const itemY = isTop ? 700 : 100;
+                    const gem = this.add.sprite(500 + Phaser.Math.Between(0, 50), itemY, 'gem').setDepth(6);
+                    gem.setTint(tint);
+                    this.tweens.add({ targets: gem, angle: 360, duration: 2000, repeat: -1 });
+                    this.gems.push(gem);
+                }
+            }
 
-                // Animaciones de entrada
-                goText.setScale(0);
-                scoreText.setAlpha(0);
-                btnBg.setScale(0);
-                btnText.setAlpha(0);
-                btnStroke.setScale(0);
+            updateEntities(delta) {
+                const move = (this.speed + this.score * 0.2) * delta / 1000;
 
-                this.tweens.add({
-                    targets: goText, scale: 1, duration: 450, ease: 'Back.easeOut'
-                });
-
-                this.tweens.add({
-                    targets: [scoreText, btnBg, btnText, btnStroke], alpha: 1, scale: 1,
-                    duration: 400, delay: 200, ease: 'Back.easeOut'
-                });
-
-                // === REINICIO GLOBAL (Tap en cualquier lado) ===
-                // Esperamos 500ms para evitar reinicios accidentales inmediatos
-                this.time.delayedCall(500, () => {
-                    this.input.once('pointerdown', () => {
-                        // Solo si seguimos en Game Over (por seguridad)
-                        if (this.isGameOver) {
-                            audioManager.playScore();
-                            this.scene.restart();
+                // OBSTÁCULOS
+                for (let i = this.obs.length - 1; i >= 0; i--) {
+                    const o = this.obs[i];
+                    o.x -= move;
+                    if (o.x < -50) { o.destroy(); this.obs.splice(i, 1); continue; }
+                    
+                    if (Math.abs(this.player.x - o.x) < 30 && Math.abs(this.player.y - o.y) < (o.displayHeight/2 + 15)) {
+                        if (this.shieldActive) {
+                            // ROMPER OBSTÁCULO
+                            this.smashObstacle(o);
+                            this.obs.splice(i, 1);
+                        } else {
+                            this.gameOver();
                         }
+                    }
+                }
+
+                // GEMAS
+                for (let i = this.gems.length - 1; i >= 0; i--) {
+                    const g = this.gems[i];
+                    g.x -= move;
+                    if (g.x < -50) { g.destroy(); this.gems.splice(i, 1); continue; }
+                    if (Math.abs(this.player.x - g.x) < 40 && Math.abs(this.player.y - g.y) < 50) {
+                        this.collectGem(g, i);
+                    }
+                }
+
+                // ESCUDOS
+                for (let i = this.shields.length - 1; i >= 0; i--) {
+                    const s = this.shields[i];
+                    s.x -= move;
+                    if (s.x < -50) { s.destroy(); this.shields.splice(i, 1); continue; }
+                    if (Math.abs(this.player.x - s.x) < 40 && Math.abs(this.player.y - s.y) < 50) {
+                        this.activateShield(s, i);
+                    }
+                }
+            }
+
+            smashObstacle(obs) {
+                audio.playSmash();
+                this.cameras.main.shake(100, 0.01);
+                
+                // Partículas explosión
+                for(let k=0; k<8; k++) {
+                    const p = this.add.rectangle(obs.x, obs.y, 8, 8, obs.tintTopLeft);
+                    this.tweens.add({
+                        targets: p,
+                        x: p.x + Phaser.Math.Between(-50, 50),
+                        y: p.y + Phaser.Math.Between(-50, 50),
+                        alpha: 0, rotation: 5, duration: 400,
+                        onComplete: () => p.destroy()
                     });
+                }
+                obs.destroy();
+            }
+
+            activateShield(sprite, index) {
+                sprite.destroy();
+                this.shields.splice(index, 1);
+                
+                audio.playShield();
+                this.shieldActive = true;
+                this.shieldAura.setAlpha(1);
+                this.shieldAura.setTint(0x00ffff);
+                
+                // Texto flotante
+                const txt = this.add.text(this.player.x, this.player.y - 50, 'ESCUDO!', { fontSize: '16px', fontFamily: 'Arial Black', color: '#00ffff' }).setOrigin(0.5);
+                this.tweens.add({ targets: txt, y: txt.y - 50, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
+
+                // Reiniciar temporizador si ya tenías escudo
+                if (this.shieldTimer) this.shieldTimer.remove();
+
+                // Parpadeo final
+                this.time.delayedCall(4000, () => {
+                    if (this.shieldActive) {
+                        this.tweens.add({ targets: this.shieldAura, alpha: 0.2, yoyo: true, repeat: 10, duration: 100 });
+                    }
                 });
+
+                // Apagar escudo
+                this.shieldTimer = this.time.delayedCall(6000, () => {
+                    this.shieldActive = false;
+                    this.shieldAura.setAlpha(0);
+                });
+            }
+
+            collectGem(gem, index) {
+                audio.playCollect();
+                this.gemCount++;
+                this.dist += 50;
+                this.gemTxt.setText('💎 ' + this.gemCount);
+                
+                const popup = this.add.text(gem.x, gem.y, '+50m', { fontSize: '20px', fontFamily: 'Arial Black', color: '#ffffff', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+                this.tweens.add({ targets: popup, y: popup.y - 50, alpha: 0, duration: 600, onComplete: () => popup.destroy() });
+
+                const p = this.add.circle(gem.x, gem.y, 20, gem.tintTopLeft, 0.6);
+                this.tweens.add({ targets: p, scale: 2, alpha: 0, duration: 300, onComplete: () => p.destroy() });
+
+                gem.destroy();
+                this.gems.splice(index, 1);
+            }
+
+            flip() {
+                if (this.over) return;
+                this.inv = !this.inv;
+                this.baseY = this.inv ? 60 : 740;
+                this.cameras.main.shake(80, 0.004);
+                this.tweens.add({ targets: this.player, scaleY: -1, duration: 100 });
+                audio.playGravity();
+                
+                const pColor = this.player.tintTopLeft;
+                for(let i=0; i<5; i++) {
+                    const p = this.add.circle(this.player.x, this.player.y, 4, pColor, 1);
+                    this.tweens.add({ targets: p, x: p.x + Phaser.Math.Between(-20,20), y: p.y + Phaser.Math.Between(-20,20), alpha: 0, duration: 400 });
+                }
+            }
+
+            gameOver() {
+                this.over = true;
+                audio.stopMusic();
+                audio.playDeath();
+                this.cameras.main.shake(300, 0.02);
+                this.player.setVisible(false);
+                this.shieldAura.setAlpha(0);
+                
+                const cx = 225, cy = 400;
+
+                this.add.rectangle(cx, cy, 450, 800, 0x2a004f, 0.95).setDepth(50);
+                
+                const sun = this.add.graphics({ x: cx, y: cy });
+                sun.setDepth(50);
+                sun.fillStyle(0xff00ff, 0.15);
+                for(let i=0; i<12; i++) {
+                    sun.slice(0, 0, 600, Phaser.Math.DegToRad(i*30), Phaser.Math.DegToRad(i*30+15));
+                    sun.fillPath();
+                }
+                this.tweens.add({ targets: sun, angle: 360, duration: 8000, repeat: -1, ease: 'Linear' });
+
+                const title = this.add.text(cx, 250, 'GAME\nOVER', { 
+                    fontSize: '70px', fontFamily: 'Arial Black', align: 'center', 
+                    color: '#ff006e', stroke: '#00ffff', strokeThickness: 10,
+                    shadow: { blur: 10, color: '#000000', fill: true }
+                }).setOrigin(0.5).setDepth(51).setScale(0);
+                
+                this.tweens.add({ targets: title, scale: 1, ease: 'Bounce.easeOut', duration: 800 });
+                this.tweens.add({ targets: title, scale: 1.05, yoyo: true, repeat: -1, duration: 500, delay: 800 });
+
+                this.add.text(cx, 400, 'DISTANCIA: ' + this.score + 'm', { fontSize: '24px', fontFamily: 'Arial Black', color: '#fff' }).setOrigin(0.5).setDepth(51);
+                this.add.text(cx, 440, 'GEMAS: ' + this.gemCount, { fontSize: '24px', fontFamily: 'Arial Black', color: '#00ff00' }).setOrigin(0.5).setDepth(51);
+
+                const btn = this.add.rectangle(cx, 550, 220, 60, 0x00ffff).setInteractive().setDepth(51);
+                this.add.text(cx, 550, 'REINICIAR', { fontSize: '24px', fontFamily: 'Arial Black', color: '#2a004f' }).setOrigin(0.5).setDepth(52);
+                this.tweens.add({ targets: btn, scale: 1.05, yoyo: true, repeat: -1, duration: 800 });
+
+                btn.on('pointerdown', () => { audio.playScore(); this.scene.restart(); });
             }
         }
+
         // ========================================
-        // CONFIGURACIÓN PHASER
+        // 5. CONFIGURACIÓN E INICIO
         // ========================================
         const config = {
             type: Phaser.CANVAS,
             canvas: document.getElementById('game-canvas'),
-            width: 450,
-            height: 800,
+            width: 450, height: 800,
             backgroundColor: '#0a0a0f',
             parent: 'game-wrapper',
-            physics: {
-                default: 'arcade',
-                arcade: { gravity: { y: 700 }, debug: false }
-            },
-            scene: [OpeningScene, GameScene],
-            scale: {
-                mode: Phaser.Scale.FIT,
-                autoCenter: Phaser.Scale.CENTER_BOTH
-            },
-            render: {
-                antialias: false,
-                pixelArt: true
-            }
+            scene: [IntroScene, GameScene],
+            scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH }
         };
 
-        // Iniciar juego
         const game = new Phaser.Game(config);
 
-        // Pantalla de carga mejorada
-        let loadProgress = 0;
+        let p = 0;
         const bar = document.getElementById('loading-bar');
-        const percent = document.getElementById('loading-percent');
-
-        function updateLoading() {
-            loadProgress += Math.random() * 12;
-            if (loadProgress > 100) loadProgress = 100;
-
-            bar.style.width = loadProgress + '%';
-            percent.textContent = Math.floor(loadProgress) + '%';
-
-            if (loadProgress >= 100) {
+        const txt = document.getElementById('loading-percent');
+        const iv = setInterval(() => {
+            p += 5 + Math.random()*10;
+            if(p >= 100) {
+                p=100; clearInterval(iv);
                 setTimeout(() => {
                     document.getElementById('loading-screen').style.display = 'none';
                     document.getElementById('game-canvas').style.display = 'block';
                 }, 200);
-                return false;
             }
-            return true;
-        }
-
-        const loadInterval = setInterval(updateLoading, 80);
-
-        // Prevenir zoom y scroll
-        document.addEventListener('touchstart', (e) => {
-            if (e.touches.length > 1) e.preventDefault();
-        }, { passive: false });
-
-        let lastTouch = 0;
-        document.addEventListener('touchend', (e) => {
-            const now = Date.now();
-            if (now - lastTouch <= 300) e.preventDefault();
-            lastTouch = now;
-        }, false);
-
-        document.addEventListener('scroll', (e) => e.preventDefault(), { passive: false });
+            bar.style.width = p + '%';
+            txt.innerText = Math.floor(p) + '%';
+        }, 100);
+        
+        document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
     </script>
 </body>
 </html>
