@@ -113,12 +113,20 @@
         // ========================================
         // SISTEMA DE AUDIO (Web Audio API)
         // ========================================
+        // ========================================
+        // SISTEMA DE AUDIO (CORREGIDO)
+        // ========================================
         class AudioManager {
             constructor() {
                 this.audioContext = null;
                 this.masterGain = null;
                 this.musicPlaying = false;
                 this.initialized = false;
+                
+                // Referencias para poder detener los sonidos
+                this.bassOsc = null;
+                this.bassInterval = null;
+                this.melodyTimeout = null;
             }
 
             init() {
@@ -136,20 +144,15 @@
 
             createOscillator(type, frequency, duration, volume = 0.2) {
                 if (!this.audioContext || !this.initialized) return;
-
                 try {
                     const oscillator = this.audioContext.createOscillator();
                     const gainNode = this.audioContext.createGain();
-
                     oscillator.type = type;
                     oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
-
                     gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
                     gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
-
                     oscillator.connect(gainNode);
                     gainNode.connect(this.masterGain);
-
                     oscillator.start();
                     oscillator.stop(this.audioContext.currentTime + duration);
                 } catch (e) {}
@@ -161,10 +164,18 @@
             }
 
             playDeath() {
-                for (let i = 0; i < 4; i++) {
-                    setTimeout(() => {
-                        this.createOscillator('sawtooth', 80 - i * 15, 0.15, 0.2);
-                    }, i * 60);
+                // Sonido de "fallo" descendente
+                if (this.audioContext && this.initialized) {
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.frequency.setValueAtTime(200, this.audioContext.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.4);
+                    gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+                    gain.gain.linearRampToValueAtTime(0, this.audioContext.currentTime + 0.4);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start();
+                    osc.stop(this.audioContext.currentTime + 0.4);
                 }
             }
 
@@ -181,21 +192,25 @@
                 const melodyFreqs = [262, 330, 392, 523, 392, 330, 262, 196];
                 let noteIndex = 0;
 
-                const bassOsc = this.audioContext.createOscillator();
+                // BAJO (Guardamos la referencia en this.bassOsc)
+                this.bassOsc = this.audioContext.createOscillator();
                 const bassGain = this.audioContext.createGain();
-                bassOsc.type = 'sawtooth';
-                bassOsc.frequency.value = bassFreq;
+                this.bassOsc.type = 'sawtooth';
+                this.bassOsc.frequency.value = bassFreq;
                 bassGain.gain.value = 0.12;
-                bassOsc.connect(bassGain);
+                this.bassOsc.connect(bassGain);
                 bassGain.connect(this.masterGain);
-                bassOsc.start();
+                this.bassOsc.start();
 
-                setInterval(() => {
-                    if (this.musicPlaying && this.audioContext) {
-                        bassOsc.frequency.setValueAtTime(
-                            bassFreq + Math.sin(this.audioContext.currentTime * 3) * 8,
-                            this.audioContext.currentTime
-                        );
+                // Modulación del bajo
+                this.bassInterval = setInterval(() => {
+                    if (this.musicPlaying && this.audioContext && this.bassOsc) {
+                        try {
+                            this.bassOsc.frequency.setValueAtTime(
+                                bassFreq + Math.sin(this.audioContext.currentTime * 3) * 8,
+                                this.audioContext.currentTime
+                            );
+                        } catch(e) {}
                     }
                 }, 40);
 
@@ -213,14 +228,33 @@
                     osc.stop(this.audioContext.currentTime + 0.15);
 
                     noteIndex++;
-                    setTimeout(playMelody, 200);
+                    this.melodyTimeout = setTimeout(playMelody, 200);
                 };
 
-                setTimeout(playMelody, 400);
+                this.melodyTimeout = setTimeout(playMelody, 400);
             }
 
             stopMusic() {
                 this.musicPlaying = false;
+                
+                // DETENER EL BAJO CORRECTAMENTE
+                if (this.bassOsc) {
+                    try {
+                        this.bassOsc.stop();
+                        this.bassOsc.disconnect();
+                    } catch(e) {}
+                    this.bassOsc = null;
+                }
+
+                if (this.bassInterval) {
+                    clearInterval(this.bassInterval);
+                    this.bassInterval = null;
+                }
+
+                if (this.melodyTimeout) {
+                    clearTimeout(this.melodyTimeout);
+                    this.melodyTimeout = null;
+                }
             }
         }
 
@@ -422,6 +456,9 @@
         // ========================================
         // ESCENA PRINCIPAL DEL JUEGO
         // ========================================
+        // ========================================
+        // ESCENA PRINCIPAL DEL JUEGO (CORREGIDA)
+        // ========================================
         class GameScene extends Phaser.Scene {
             constructor() {
                 super({ key: 'GameScene' });
@@ -434,6 +471,7 @@
             create() {
                 this.gameSpeed = 300;
                 this.score = 0;
+                this.distanceReal = 0; // NUEVO: Para llevar la cuenta real de metros
                 this.isGravityInverted = false;
                 this.isGameOver = false;
                 this.obstacles = [];
@@ -449,33 +487,38 @@
                 this.add.rectangle(225, 22, 450, 3, 0xff00ff).setAlpha(0.8);
                 this.add.rectangle(225, 778, 450, 3, 0x00ffff).setAlpha(0.8);
 
-                // Jugador
+                // Jugador (Aseguramos que se dibuje por encima de todo con setDepth)
                 this.player = this.add.sprite(80, 740, 'player');
                 this.player.setOrigin(0.5, 0.5);
+                this.player.setDepth(10); // CORRECCIÓN: El jugador siempre visible
 
                 // Animación de flotación
                 this.baseY = 740;
                 this.floatOffset = 0;
                 this.floatSpeed = 0.003;
 
-                // UI
+                // --- UI / INTERFAZ (CORREGIDA: MOVIDA A LA DERECHA) ---
+                const uiX = 300; // Movemos la UI a la derecha (antes estaba en 15)
+                
                 this.scorePanel = this.add.graphics();
-                this.scorePanel.fillStyle(0x1a1a2e, 0.85);
-                this.scorePanel.fillRoundedRect(15, 40, 130, 35, 8);
+                this.scorePanel.fillStyle(0x1a1a2e, 0.5); // CORRECCIÓN: Más transparente (0.5 en vez de 0.85)
+                this.scorePanel.fillRoundedRect(uiX, 40, 130, 35, 8);
                 this.scorePanel.lineStyle(2, 0xff00ff, 0.8);
-                this.scorePanel.strokeRoundedRect(15, 40, 130, 35, 8);
+                this.scorePanel.strokeRoundedRect(uiX, 40, 130, 35, 8);
+                this.scorePanel.setDepth(5); // UI detrás del jugador si coinciden, pero visible
 
-                this.add.text(22, 46, 'DISTANCIA', {
+                this.add.text(uiX + 7, 46, 'DISTANCIA', {
                     fontSize: '10px', fontFamily: 'monospace', color: '#00ffff'
-                });
+                }).setDepth(6);
 
-                this.scoreValue = this.add.text(22, 58, '0m', {
+                this.scoreValue = this.add.text(uiX + 7, 58, '0m', {
                     fontSize: '18px', fontFamily: 'Arial Black', color: '#ff00ff'
-                });
+                }).setDepth(6);
 
-                this.gravityInd = this.add.text(435, 46, '⬇ SUELO', {
+                // Indicador de gravedad (lo movemos un poco para que cuadre)
+                this.gravityInd = this.add.text(uiX - 10, 46, '⬇ SUELO', {
                     fontSize: '12px', fontFamily: 'monospace', color: '#00ffff'
-                }).setOrigin(1, 0);
+                }).setOrigin(1, 0).setDepth(6);
 
                 // Efecto pulse en puntuación
                 this.tweens.add({
@@ -503,6 +546,15 @@
                 // Animación flotación
                 this.floatOffset += this.floatSpeed * delta;
                 this.player.y = this.baseY + Math.sin(this.floatOffset) * 4;
+
+                // --- PUNTUACIÓN (CORREGIDA) ---
+                // Sumamos distancia basada en la velocidad y el tiempo transcurrido
+                this.distanceReal += (this.gameSpeed * delta / 1000) / 5; // Dividido por 5 para que no suba demasiado rápido
+                this.score = Math.floor(this.distanceReal);
+                this.scoreValue.setText(this.score + 'm');
+
+                // Aumentar velocidad del juego progresivamente
+                this.gameSpeed += 0.05 * (delta / 16);
 
                 // Generar obstáculos
                 if (time - this.lastObstacleTime > 1800 - Math.min(this.score * 3, 800)) {
@@ -543,10 +595,6 @@
                     }
                 }
 
-                // Puntuación
-                this.score = Math.floor(this.player.x / 8);
-                this.scoreValue.setText(this.score + 'm');
-
                 // Sonido cada 100m
                 if (this.score > 0 && this.score % 100 === 0 && this.score !== this.lastScore) {
                     this.lastScore = this.score;
@@ -572,12 +620,13 @@
                 const obs = this.add.sprite(480, y, texture);
                 obs.setOrigin(0.5, 0.5);
                 obs.setAlpha(0);
+                // Obstaculos detrás del jugador y UI
+                obs.setDepth(1); 
 
                 this.tweens.add({
                     targets: obs, alpha: 1, duration: 150
                 });
 
-                // Ajustar escala si es necesario
                 if (h < 80) {
                     obs.setScale(1, h / 100);
                 }
@@ -591,15 +640,12 @@
                 this.isGravityInverted = !this.isGravityInverted;
                 this.physics.world.gravity.y = this.isGravityInverted ? -700 : 700;
 
-                // Efecto visual
                 this.cameras.main.shake(80, 0.004);
 
-                // Animación jugador
                 this.tweens.add({
                     targets: this.player, scaleY: -1, duration: 80, ease: 'Linear'
                 });
 
-                // Partículas
                 for (let i = 0; i < 8; i++) {
                     const p = this.add.circle(
                         this.player.x, this.player.y,
@@ -615,7 +661,6 @@
                     });
                 }
 
-                // Actualizar indicador
                 if (this.isGravityInverted) {
                     this.gravityInd.setText('⬆ TECHO').setColor('#ff00ff');
                     this.baseY = 60;
@@ -644,9 +689,9 @@
                 audioManager.stopMusic();
 
                 this.cameras.main.shake(250, 0.018);
+                // Mantenemos el fade a negro brevemente
                 this.cameras.main.fade(250, 0, 0, 0);
 
-                // Partículas muerte
                 for (let i = 0; i < 16; i++) {
                     const p = this.add.circle(
                         this.player.x, this.player.y,
@@ -667,38 +712,35 @@
             }
 
             showGameOver() {
+                // Recuperar visión
+                this.cameras.main.fadeIn(250, 0, 0, 0);
+
                 // Overlay
                 const overlay = this.add.rectangle(225, 400, 450, 800, 0x0a0a0f, 0.92);
+                overlay.setDepth(20);
 
-                // GAME OVER texto
+                // Texto GAME OVER
                 const goText = this.add.text(225, 250, 'GAME OVER', {
                     fontSize: '44px', fontFamily: 'Arial Black, Impact',
                     color: '#ff0044', stroke: '#ffffff', strokeThickness: 6, align: 'center'
-                }).setOrigin(0.5);
+                }).setOrigin(0.5).setDepth(21);
 
-                // Efecto temblor
                 this.tweens.add({
                     targets: goText, x: { from: 230, to: 220 }, duration: 40,
                     yoyo: true, repeat: 4
                 });
 
-                // Destello
-                this.tweens.add({
-                    targets: goText, alpha: { from: 1, to: 0.4 }, duration: 180,
-                    yoyo: true, repeat: -1
-                });
-
-                // Puntuación
+                // Texto Puntuación
                 const scoreText = this.add.text(225, 380, 'DISTANCIA: ' + this.score + 'm', {
                     fontSize: '22px', fontFamily: 'Arial Black', color: '#00ffff'
-                }).setOrigin(0.5);
+                }).setOrigin(0.5).setDepth(21);
 
-                // Nuevo récord
+                // Nuevo Récord
                 if (this.score > (this.bestScore || 0)) {
                     this.bestScore = this.score;
                     const recordText = this.add.text(225, 420, '¡NUEVO RÉCORD!', {
                         fontSize: '18px', fontFamily: 'Arial Black', color: '#ffff00'
-                    }).setOrigin(0.5);
+                    }).setOrigin(0.5).setDepth(21);
 
                     this.tweens.add({
                         targets: recordText, scale: { from: 1, to: 1.15 }, duration: 250,
@@ -706,57 +748,59 @@
                     });
                 }
 
-                // Botón reiniciar
-                const btnW = 160, btnH = 42, btnX = 225, btnY = 500;
-                const btnBg = this.add.graphics();
-                btnBg.fillStyle(0xff00ff, 1);
-                btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+                // === BOTÓN REINICIAR MEJORADO ===
+                const btnX = 225, btnY = 500;
+                
+                // Usamos un contenedor o un rectángulo simple interactivo
+                const btnBg = this.add.rectangle(btnX, btnY, 200, 50, 0xff00ff)
+                    .setInteractive({ useHandCursor: true })
+                    .setDepth(21);
+                
+                // Borde del botón
+                const btnStroke = this.add.graphics().setDepth(21);
+                btnStroke.lineStyle(4, 0xffffff, 1);
+                btnStroke.strokeRect(btnX - 100, btnY - 25, 200, 50);
 
                 const btnText = this.add.text(btnX, btnY, 'REINICIAR', {
-                    fontSize: '16px', fontFamily: 'Arial Black', color: '#ffffff'
-                }).setOrigin(0.5);
+                    fontSize: '20px', fontFamily: 'Arial Black', color: '#ffffff'
+                }).setOrigin(0.5).setDepth(21);
 
-                btnBg.setInteractive({ useHandCursor: true })
-                    .on('pointerover', () => {
-                        btnBg.clear();
-                        btnBg.fillStyle(0x00ffff, 1);
-                        btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
-                    })
-                    .on('pointerout', () => {
-                        btnBg.clear();
-                        btnBg.fillStyle(0xff00ff, 1);
-                        btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
-                    })
-                    .on('pointerdown', () => {
-                        audioManager.playScore();
-                        this.scene.restart();
-                    });
+                // Animación simple al pulsar el botón
+                btnBg.on('pointerdown', () => {
+                    btnBg.setFillStyle(0x00ffff); // Cambia color al pulsar
+                    audioManager.playScore();
+                    this.scene.restart();
+                });
 
-                // Animaciones entrada
+                // Animaciones de entrada
                 goText.setScale(0);
                 scoreText.setAlpha(0);
                 btnBg.setScale(0);
                 btnText.setAlpha(0);
+                btnStroke.setScale(0);
 
                 this.tweens.add({
                     targets: goText, scale: 1, duration: 450, ease: 'Back.easeOut'
                 });
 
                 this.tweens.add({
-                    targets: [scoreText, btnBg, btnText], alpha: 1, scale: 1,
+                    targets: [scoreText, btnBg, btnText, btnStroke], alpha: 1, scale: 1,
                     duration: 400, delay: 200, ease: 'Back.easeOut'
                 });
 
-                // Tap para reiniciar
-                this.input.once('pointerdown', () => {
-                    if (this.isGameOver) {
-                        audioManager.playScore();
-                        this.scene.restart();
-                    }
+                // === REINICIO GLOBAL (Tap en cualquier lado) ===
+                // Esperamos 500ms para evitar reinicios accidentales inmediatos
+                this.time.delayedCall(500, () => {
+                    this.input.once('pointerdown', () => {
+                        // Solo si seguimos en Game Over (por seguridad)
+                        if (this.isGameOver) {
+                            audioManager.playScore();
+                            this.scene.restart();
+                        }
+                    });
                 });
             }
         }
-
         // ========================================
         // CONFIGURACIÓN PHASER
         // ========================================
