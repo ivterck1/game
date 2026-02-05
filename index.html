@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gravedad Inversa - Cyberpunk Runner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            background: #0a0a0f;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 450px;
+            max-height: 800px;
+        }
+
+        /* Pantalla de carga */
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .loading-title {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(90deg, #ff00ff, #00ffff, #ff00ff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradient-shift 2s linear infinite;
+            text-align: center;
+            margin-bottom: 15px;
+            line-height: 1.3;
+        }
+
+        .loading-subtitle {
+            color: #00ffff;
+            font-size: 0.8rem;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+        }
+
+        .loading-bar-container {
+            width: 150px;
+            height: 3px;
+            background: #1a1a2e;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .loading-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff00ff, #00ffff);
+            border-radius: 2px;
+            transition: width 0.2s ease;
+        }
+
+        .loading-percent {
+            color: #888;
+            font-size: 0.7rem;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+
+        @keyframes gradient-shift {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-wrapper">
+        <div id="loading-screen">
+            <div class="loading-title">GRAVEDAD<br>INVERSA</div>
+            <div class="loading-subtitle">Cyberpunk Runner</div>
+            <div class="loading-bar-container">
+                <div class="loading-bar" id="loading-bar"></div>
+            </div>
+            <div class="loading-percent" id="loading-percent">0%</div>
+        </div>
+        <canvas id="game-canvas" style="display: none;"></canvas>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script>
+        // ========================================
+        // SISTEMA DE AUDIO (Web Audio API)
+        // ========================================
+        class AudioManager {
+            constructor() {
+                this.audioContext = null;
+                this.masterGain = null;
+                this.musicPlaying = false;
+                this.initialized = false;
+            }
+
+            init() {
+                if (this.initialized) return;
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.masterGain = this.audioContext.createGain();
+                    this.masterGain.gain.value = 0.4;
+                    this.masterGain.connect(this.audioContext.destination);
+                    this.initialized = true;
+                } catch (e) {
+                    console.log('Audio no disponible');
+                }
+            }
+
+            createOscillator(type, frequency, duration, volume = 0.2) {
+                if (!this.audioContext || !this.initialized) return;
+
+                try {
+                    const oscillator = this.audioContext.createOscillator();
+                    const gainNode = this.audioContext.createGain();
+
+                    oscillator.type = type;
+                    oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+
+                    gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(this.masterGain);
+
+                    oscillator.start();
+                    oscillator.stop(this.audioContext.currentTime + duration);
+                } catch (e) {}
+            }
+
+            playGravitySwitch() {
+                this.createOscillator('sawtooth', 150, 0.1, 0.2);
+                setTimeout(() => this.createOscillator('sine', 300, 0.08, 0.15), 30);
+            }
+
+            playDeath() {
+                for (let i = 0; i < 4; i++) {
+                    setTimeout(() => {
+                        this.createOscillator('sawtooth', 80 - i * 15, 0.15, 0.2);
+                    }, i * 60);
+                }
+            }
+
+            playScore() {
+                this.createOscillator('square', 600, 0.06, 0.12);
+                setTimeout(() => this.createOscillator('square', 900, 0.06, 0.1), 60);
+            }
+
+            startMusic() {
+                if (!this.audioContext || !this.initialized || this.musicPlaying) return;
+                this.musicPlaying = true;
+
+                const bassFreq = 60;
+                const melodyFreqs = [262, 330, 392, 523, 392, 330, 262, 196];
+                let noteIndex = 0;
+
+                const bassOsc = this.audioContext.createOscillator();
+                const bassGain = this.audioContext.createGain();
+                bassOsc.type = 'sawtooth';
+                bassOsc.frequency.value = bassFreq;
+                bassGain.gain.value = 0.12;
+                bassOsc.connect(bassGain);
+                bassGain.connect(this.masterGain);
+                bassOsc.start();
+
+                setInterval(() => {
+                    if (this.musicPlaying && this.audioContext) {
+                        bassOsc.frequency.setValueAtTime(
+                            bassFreq + Math.sin(this.audioContext.currentTime * 3) * 8,
+                            this.audioContext.currentTime
+                        );
+                    }
+                }, 40);
+
+                const playMelody = () => {
+                    if (!this.musicPlaying || !this.audioContext) return;
+
+                    const osc = this.audioContext.createOscillator();
+                    const gain = this.audioContext.createGain();
+                    osc.type = 'square';
+                    osc.frequency.value = melodyFreqs[noteIndex % melodyFreqs.length];
+                    gain.gain.value = 0.06;
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start();
+                    osc.stop(this.audioContext.currentTime + 0.15);
+
+                    noteIndex++;
+                    setTimeout(playMelody, 200);
+                };
+
+                setTimeout(playMelody, 400);
+            }
+
+            stopMusic() {
+                this.musicPlaying = false;
+            }
+        }
+
+        const audioManager = new AudioManager();
+
+        // ========================================
+        // PRE-GENERAR TEXTURAS
+        // ========================================
+        function generateGameTextures(scene) {
+            // Textura de fondo
+            const bgGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
+            bgGraphics.fillStyle(0x0a0a0f, 1);
+            bgGraphics.fillRect(0, 0, 450, 800);
+
+            // Edificios
+            for (let i = 0; i < 15; i++) {
+                const x = i * 40 + 10;
+                const h = Phaser.Math.Between(80, 200);
+                const brightness = 25 + Math.floor(h / 200 * 20);
+                bgGraphics.fillStyle(Phaser.Display.Color.GetColor(brightness, brightness, brightness + 15), 1);
+                bgGraphics.fillRect(x, 800 - h, 30, h);
+
+                // Ventanas
+                bgGraphics.fillStyle(0x00ffff, 0.25);
+                for (let row = 0; row < h / 25; row++) {
+                    if (Math.random() > 0.4) {
+                        bgGraphics.fillRect(x + 4, 800 - h + 15 + row * 22, 8, 12);
+                    }
+                }
+            }
+            bgGraphics.generateTexture('bg_texture', 450, 800);
+
+            // Textura foreground
+            const fgGraphics = scene.make.graphics({ x: 0, y: 0, add: false });
+            fgGraphics.fillStyle(0x1a1a2e, 0.9);
+            fgGraphics.fillRect(0, 0, 450, 800);
+
+            fgGraphics.lineStyle(1, 0xff00ff, 0.2);
+            for (let i = 0; i < 450; i += 30) {
+                fgGraphics.lineBetween(i, 0, i, 800);
+            }
+            for (let i = 0; i < 800; i += 30) {
+                fgGraphics.lineBetween(0, i, 450, i);
+            }
+            fgGraphics.generateTexture('fg_texture', 450, 800);
+
+            // Textura jugador
+            const playerG = scene.make.graphics({ x: 0, y: 0, add: false });
+            playerG.fillStyle(0xff00ff, 0.25);
+            playerG.fillCircle(20, 20, 22);
+            playerG.fillStyle(0x1a1a2e, 1);
+            playerG.fillCircle(20, 20, 16);
+            playerG.lineStyle(2, 0x00ffff, 1);
+            playerG.strokeCircle(20, 20, 16);
+            playerG.fillStyle(0x00ffff, 1);
+            playerG.fillRect(14, 16, 5, 3);
+            playerG.fillRect(21, 16, 5, 3);
+            playerG.fillStyle(0xffffff, 1);
+            playerG.fillRect(15, 17, 2, 1.5);
+            playerG.fillRect(22, 17, 2, 1.5);
+            playerG.generateTexture('player', 40, 40);
+
+            // Textura obstáculo顶部
+            const obsTopG = scene.make.graphics({ x: 0, y: 0, add: false });
+            obsTopG.fillStyle(0xff00ff, 0.25);
+            obsTopG.fillRect(0, 0, 40, 120);
+            obsTopG.fillStyle(0x1a1a2e, 1);
+            obsTopG.fillRect(2, 2, 36, 116);
+            obsTopG.lineStyle(2, 0xff00ff, 1);
+            obsTopG.strokeRect(2, 2, 36, 116);
+            obsTopG.lineStyle(1, 0xff00ff, 0.4);
+            for (let i = 0; i < 116; i += 18) {
+                obsTopG.lineBetween(2, i + 9, 38, i + 9);
+            }
+            obsTopG.generateTexture('obstacle_top', 40, 120);
+
+            // Textura obstáculo底部
+            const obsBottomG = scene.make.graphics({ x: 0, y: 0, add: false });
+            obsBottomG.fillStyle(0x00ffff, 0.25);
+            obsBottomG.fillRect(0, 0, 40, 120);
+            obsBottomG.fillStyle(0x1a1a2e, 1);
+            obsBottomG.fillRect(2, 2, 36, 116);
+            obsBottomG.lineStyle(2, 0x00ffff, 1);
+            obsBottomG.strokeRect(2, 2, 36, 116);
+            obsBottomG.lineStyle(1, 0x00ffff, 0.4);
+            for (let i = 0; i < 116; i += 18) {
+                obsBottomG.lineBetween(2, i + 9, 38, i + 9);
+            }
+            obsBottomG.generateTexture('obstacle_bottom', 40, 120);
+
+            // Textura partícula
+            const partG = scene.make.graphics({ x: 0, y: 0, add: false });
+            partG.fillStyle(0xff00ff, 0.8);
+            partG.fillCircle(4, 4, 4);
+            partG.generateTexture('particle', 8, 8);
+        }
+
+        // ========================================
+        // ESCENA DE OPENING
+        // ========================================
+        class OpeningScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'OpeningScene' });
+            }
+
+            create() {
+                // Fondo
+                this.add.rectangle(225, 400, 450, 800, 0x0a0a0f);
+
+                // Partículas
+                for (let i = 0; i < 30; i++) {
+                    const p = this.add.circle(
+                        Phaser.Math.Between(0, 450),
+                        Phaser.Math.Between(0, 800),
+                        Phaser.Math.Between(1, 2),
+                        0xff00ff, 0.4
+                    );
+                    this.tweens.add({
+                        targets: p, alpha: 0, duration: Phaser.Math.Between(1500, 2500),
+                        repeat: -1, delay: Phaser.Math.Between(0, 1500)
+                    });
+                }
+
+                // Título
+                const title = this.add.text(225, 280, 'GRAVEDAD\nINVERSA', {
+                    fontSize: '36px', fontFamily: 'Arial Black', color: '#ff00ff',
+                    align: 'center', stroke: '#00ffff', strokeThickness: 3
+                }).setOrigin(0.5);
+
+                this.tweens.add({
+                    targets: title, alpha: { from: 1, to: 0.6 }, duration: 400,
+                    yoyo: true, repeat: -1
+                });
+
+                // Subtítulo
+                const subtitle = this.add.text(225, 440, '', {
+                    fontSize: '14px', fontFamily: 'monospace', color: '#00ffff',
+                    letterSpacing: '6px'
+                }).setOrigin(0.5);
+
+                let subIndex = 0;
+                const subText = 'CYBERPUNK RUNNER';
+                this.time.addEvent({
+                    delay: 60, callback: () => {
+                        if (subIndex < subText.length) {
+                            subtitle.setText(subText.substring(0, subIndex + 1));
+                            subIndex++;
+                        }
+                    }, repeat: subText.length - 1
+                });
+
+                // Silueta jugador
+                const px = 225, py = 350;
+                const sil = this.add.graphics();
+                sil.fillStyle(0x00ffff, 0.6);
+                sil.fillCircle(px, py - 25, 12);
+                sil.fillStyle(0xff00ff, 0.6);
+                sil.fillRect(px - 10, py - 10, 20, 25);
+                sil.fillStyle(0x00ffff, 0.6);
+                sil.fillRect(px - 8, py + 15, 6, 20);
+                sil.fillRect(px + 2, py + 15, 6, 20);
+
+                this.tweens.add({
+                    targets: sil, y: py - 8, duration: 800,
+                    yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+                });
+
+                // Scan line
+                const scan = this.add.rectangle(225, 0, 450, 2, 0x00ffff, 0.4);
+                this.tweens.add({
+                    targets: scan, y: 800, duration: 1800,
+                    repeat: -1, ease: 'Linear'
+                });
+
+                // Instrucciones
+                const instr = this.add.text(225, 600, 'TOCA PARA INICIAR', {
+                    fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
+                    backgroundColor: '#1a1a2e', padding: { x: 15, y: 8 }
+                }).setOrigin(0.5);
+
+                this.tweens.add({
+                    targets: instr, scale: { from: 1, to: 1.08 }, alpha: { from: 1, to: 0.4 },
+                    duration: 600, yoyo: true, repeat: -1
+                });
+
+                // Input
+                this.input.once('pointerdown', () => this.startGame());
+                this.input.keyboard.once('keydown-SPACE', () => this.startGame());
+            }
+
+            startGame() {
+                this.cameras.main.fade(400, 0, 0, 0);
+                this.time.delayedCall(450, () => {
+                    this.scene.start('GameScene');
+                });
+            }
+        }
+
+        // ========================================
+        // ESCENA PRINCIPAL DEL JUEGO
+        // ========================================
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'GameScene' });
+            }
+
+            preload() {
+                generateGameTextures(this);
+            }
+
+            create() {
+                this.gameSpeed = 300;
+                this.score = 0;
+                this.isGravityInverted = false;
+                this.isGameOver = false;
+                this.obstacles = [];
+                this.lastObstacleTime = 0;
+                this.lastScore = -1;
+
+                // Fondo parallax
+                this.bgLayer = this.add.tileSprite(225, 400, 450, 800, 'bg_texture');
+                this.fgLayer = this.add.tileSprite(225, 400, 450, 800, 'fg_texture');
+                this.fgLayer.alpha = 0.4;
+
+                // Líneas de límite
+                this.add.rectangle(225, 22, 450, 3, 0xff00ff).setAlpha(0.8);
+                this.add.rectangle(225, 778, 450, 3, 0x00ffff).setAlpha(0.8);
+
+                // Jugador
+                this.player = this.add.sprite(80, 740, 'player');
+                this.player.setOrigin(0.5, 0.5);
+
+                // Animación de flotación
+                this.baseY = 740;
+                this.floatOffset = 0;
+                this.floatSpeed = 0.003;
+
+                // UI
+                this.scorePanel = this.add.graphics();
+                this.scorePanel.fillStyle(0x1a1a2e, 0.85);
+                this.scorePanel.fillRoundedRect(15, 40, 130, 35, 8);
+                this.scorePanel.lineStyle(2, 0xff00ff, 0.8);
+                this.scorePanel.strokeRoundedRect(15, 40, 130, 35, 8);
+
+                this.add.text(22, 46, 'DISTANCIA', {
+                    fontSize: '10px', fontFamily: 'monospace', color: '#00ffff'
+                });
+
+                this.scoreValue = this.add.text(22, 58, '0m', {
+                    fontSize: '18px', fontFamily: 'Arial Black', color: '#ff00ff'
+                });
+
+                this.gravityInd = this.add.text(435, 46, '⬇ SUELO', {
+                    fontSize: '12px', fontFamily: 'monospace', color: '#00ffff'
+                }).setOrigin(1, 0);
+
+                // Efecto pulse en puntuación
+                this.tweens.add({
+                    targets: this.scoreValue, scale: { from: 1, to: 1.12 }, duration: 250,
+                    yoyo: true, repeat: -1
+                });
+
+                // Input
+                this.input.on('pointerdown', () => this.switchGravity());
+                this.input.keyboard.on('keydown-SPACE', () => this.switchGravity());
+
+                // Audio
+                audioManager.init();
+                audioManager.startMusic();
+                this.time.delayedCall(200, () => audioManager.playScore());
+            }
+
+            update(time, delta) {
+                if (this.isGameOver) return;
+
+                // Parallax
+                this.bgLayer.tilePositionX += this.gameSpeed * delta / 1000 * 0.25;
+                this.fgLayer.tilePositionX += this.gameSpeed * delta / 1000 * 0.4;
+
+                // Animación flotación
+                this.floatOffset += this.floatSpeed * delta;
+                this.player.y = this.baseY + Math.sin(this.floatOffset) * 4;
+
+                // Generar obstáculos
+                if (time - this.lastObstacleTime > 1800 - Math.min(this.score * 3, 800)) {
+                    this.createObstacle();
+                    this.lastObstacleTime = time;
+                }
+
+                // Actualizar obstáculos
+                for (let i = this.obstacles.length - 1; i >= 0; i--) {
+                    const obs = this.obstacles[i];
+                    obs.x -= (this.gameSpeed + this.score * 0.3) * delta / 1000;
+
+                    if (obs.x < -50) {
+                        obs.destroy();
+                        this.obstacles.splice(i, 1);
+                    }
+                }
+
+                // Colisiones con obstáculos
+                for (const obs of this.obstacles) {
+                    if (this.checkCollision(this.player, obs)) {
+                        this.handleCollision();
+                        return;
+                    }
+                }
+
+                // Límites
+                if (this.player.y < 45) {
+                    this.player.y = 45;
+                    if (this.physics.world.gravity.y < 0) {
+                        this.player.body.velocity.y = 100;
+                    }
+                }
+                if (this.player.y > 755) {
+                    this.player.y = 755;
+                    if (this.physics.world.gravity.y > 0) {
+                        this.player.body.velocity.y = -100;
+                    }
+                }
+
+                // Puntuación
+                this.score = Math.floor(this.player.x / 8);
+                this.scoreValue.setText(this.score + 'm');
+
+                // Sonido cada 100m
+                if (this.score > 0 && this.score % 100 === 0 && this.score !== this.lastScore) {
+                    this.lastScore = this.score;
+                    audioManager.playScore();
+                }
+
+                // Partículas de estela
+                if (Math.random() > 0.65) {
+                    const p = this.add.circle(this.player.x - 15, this.player.y, Phaser.Math.Between(2, 4), 0xff00ff, 0.6);
+                    this.tweens.add({
+                        targets: p, x: p.x - 40, alpha: 0, scale: 0, duration: 400,
+                        onComplete: () => p.destroy()
+                    });
+                }
+            }
+
+            createObstacle() {
+                const isTop = Math.random() > 0.5;
+                const h = Phaser.Math.Between(70, 160);
+                const y = isTop ? 35 + h / 2 : 800 - 35 - h / 2;
+
+                const texture = isTop ? 'obstacle_top' : 'obstacle_bottom';
+                const obs = this.add.sprite(480, y, texture);
+                obs.setOrigin(0.5, 0.5);
+                obs.setAlpha(0);
+
+                this.tweens.add({
+                    targets: obs, alpha: 1, duration: 150
+                });
+
+                // Ajustar escala si es necesario
+                if (h < 80) {
+                    obs.setScale(1, h / 100);
+                }
+
+                this.obstacles.push(obs);
+            }
+
+            switchGravity() {
+                if (this.isGameOver) return;
+
+                this.isGravityInverted = !this.isGravityInverted;
+                this.physics.world.gravity.y = this.isGravityInverted ? -700 : 700;
+
+                // Efecto visual
+                this.cameras.main.shake(80, 0.004);
+
+                // Animación jugador
+                this.tweens.add({
+                    targets: this.player, scaleY: -1, duration: 80, ease: 'Linear'
+                });
+
+                // Partículas
+                for (let i = 0; i < 8; i++) {
+                    const p = this.add.circle(
+                        this.player.x, this.player.y,
+                        Phaser.Math.Between(3, 6),
+                        this.isGravityInverted ? 0x00ffff : 0xff00ff, 0.7
+                    );
+                    this.tweens.add({
+                        targets: p,
+                        x: p.x + Phaser.Math.Between(-25, 25),
+                        y: p.y + Phaser.Math.Between(-25, 25),
+                        alpha: 0, scale: 0, duration: 350,
+                        onComplete: () => p.destroy()
+                    });
+                }
+
+                // Actualizar indicador
+                if (this.isGravityInverted) {
+                    this.gravityInd.setText('⬆ TECHO').setColor('#ff00ff');
+                    this.baseY = 60;
+                } else {
+                    this.gravityInd.setText('⬇ SUELO').setColor('#00ffff');
+                    this.baseY = 740;
+                }
+
+                audioManager.playGravitySwitch();
+            }
+
+            checkCollision(player, obstacle) {
+                const px = player.x, py = player.y;
+                const ox = obstacle.x, oy = obstacle.y;
+                const pr = 14, orX = 16, orY = obstacle.displayHeight / 2 - 5;
+
+                return Math.abs(px - ox) < (pr + orX) && Math.abs(py - oy) < (pr + orY);
+            }
+
+            handleCollision() {
+                if (this.isGameOver) return;
+                this.isGameOver = true;
+
+                this.physics.pause();
+                audioManager.playDeath();
+                audioManager.stopMusic();
+
+                this.cameras.main.shake(250, 0.018);
+                this.cameras.main.fade(250, 0, 0, 0);
+
+                // Partículas muerte
+                for (let i = 0; i < 16; i++) {
+                    const p = this.add.circle(
+                        this.player.x, this.player.y,
+                        Phaser.Math.Between(4, 10), 0xff00ff, 0.7
+                    );
+                    this.tweens.add({
+                        targets: p,
+                        x: p.x + Phaser.Math.Between(-80, 80),
+                        y: p.y + Phaser.Math.Between(-80, 80),
+                        alpha: 0, scale: 0, duration: 800,
+                        onComplete: () => p.destroy()
+                    });
+                }
+
+                this.player.setVisible(false);
+
+                this.time.delayedCall(400, () => this.showGameOver());
+            }
+
+            showGameOver() {
+                // Overlay
+                const overlay = this.add.rectangle(225, 400, 450, 800, 0x0a0a0f, 0.92);
+
+                // GAME OVER texto
+                const goText = this.add.text(225, 250, 'GAME OVER', {
+                    fontSize: '44px', fontFamily: 'Arial Black, Impact',
+                    color: '#ff0044', stroke: '#ffffff', strokeThickness: 6, align: 'center'
+                }).setOrigin(0.5);
+
+                // Efecto temblor
+                this.tweens.add({
+                    targets: goText, x: { from: 230, to: 220 }, duration: 40,
+                    yoyo: true, repeat: 4
+                });
+
+                // Destello
+                this.tweens.add({
+                    targets: goText, alpha: { from: 1, to: 0.4 }, duration: 180,
+                    yoyo: true, repeat: -1
+                });
+
+                // Puntuación
+                const scoreText = this.add.text(225, 380, 'DISTANCIA: ' + this.score + 'm', {
+                    fontSize: '22px', fontFamily: 'Arial Black', color: '#00ffff'
+                }).setOrigin(0.5);
+
+                // Nuevo récord
+                if (this.score > (this.bestScore || 0)) {
+                    this.bestScore = this.score;
+                    const recordText = this.add.text(225, 420, '¡NUEVO RÉCORD!', {
+                        fontSize: '18px', fontFamily: 'Arial Black', color: '#ffff00'
+                    }).setOrigin(0.5);
+
+                    this.tweens.add({
+                        targets: recordText, scale: { from: 1, to: 1.15 }, duration: 250,
+                        yoyo: true, repeat: -1
+                    });
+                }
+
+                // Botón reiniciar
+                const btnW = 160, btnH = 42, btnX = 225, btnY = 500;
+                const btnBg = this.add.graphics();
+                btnBg.fillStyle(0xff00ff, 1);
+                btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+
+                const btnText = this.add.text(btnX, btnY, 'REINICIAR', {
+                    fontSize: '16px', fontFamily: 'Arial Black', color: '#ffffff'
+                }).setOrigin(0.5);
+
+                btnBg.setInteractive({ useHandCursor: true })
+                    .on('pointerover', () => {
+                        btnBg.clear();
+                        btnBg.fillStyle(0x00ffff, 1);
+                        btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+                    })
+                    .on('pointerout', () => {
+                        btnBg.clear();
+                        btnBg.fillStyle(0xff00ff, 1);
+                        btnBg.fillRoundedRect(btnX - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
+                    })
+                    .on('pointerdown', () => {
+                        audioManager.playScore();
+                        this.scene.restart();
+                    });
+
+                // Animaciones entrada
+                goText.setScale(0);
+                scoreText.setAlpha(0);
+                btnBg.setScale(0);
+                btnText.setAlpha(0);
+
+                this.tweens.add({
+                    targets: goText, scale: 1, duration: 450, ease: 'Back.easeOut'
+                });
+
+                this.tweens.add({
+                    targets: [scoreText, btnBg, btnText], alpha: 1, scale: 1,
+                    duration: 400, delay: 200, ease: 'Back.easeOut'
+                });
+
+                // Tap para reiniciar
+                this.input.once('pointerdown', () => {
+                    if (this.isGameOver) {
+                        audioManager.playScore();
+                        this.scene.restart();
+                    }
+                });
+            }
+        }
+
+        // ========================================
+        // CONFIGURACIÓN PHASER
+        // ========================================
+        const config = {
+            type: Phaser.CANVAS,
+            canvas: document.getElementById('game-canvas'),
+            width: 450,
+            height: 800,
+            backgroundColor: '#0a0a0f',
+            parent: 'game-wrapper',
+            physics: {
+                default: 'arcade',
+                arcade: { gravity: { y: 700 }, debug: false }
+            },
+            scene: [OpeningScene, GameScene],
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            },
+            render: {
+                antialias: false,
+                pixelArt: true
+            }
+        };
+
+        // Iniciar juego
+        const game = new Phaser.Game(config);
+
+        // Pantalla de carga mejorada
+        let loadProgress = 0;
+        const bar = document.getElementById('loading-bar');
+        const percent = document.getElementById('loading-percent');
+
+        function updateLoading() {
+            loadProgress += Math.random() * 12;
+            if (loadProgress > 100) loadProgress = 100;
+
+            bar.style.width = loadProgress + '%';
+            percent.textContent = Math.floor(loadProgress) + '%';
+
+            if (loadProgress >= 100) {
+                setTimeout(() => {
+                    document.getElementById('loading-screen').style.display = 'none';
+                    document.getElementById('game-canvas').style.display = 'block';
+                }, 200);
+                return false;
+            }
+            return true;
+        }
+
+        const loadInterval = setInterval(updateLoading, 80);
+
+        // Prevenir zoom y scroll
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) e.preventDefault();
+        }, { passive: false });
+
+        let lastTouch = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouch <= 300) e.preventDefault();
+            lastTouch = now;
+        }, false);
+
+        document.addEventListener('scroll', (e) => e.preventDefault(), { passive: false });
+    </script>
+</body>
+</html>
