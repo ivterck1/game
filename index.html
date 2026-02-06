@@ -285,6 +285,9 @@
         // ========================================
         // 4. JUEGO (6 ZONAS + GEMAS + ESCUDO)
         // ========================================
+        // ========================================
+        // 4. JUEGO (CORREGIDO: BUG ESCUDO INFINITO)
+        // ========================================
         class GameScene extends Phaser.Scene {
             constructor() { super('GameScene'); }
             preload() { genTextures(this); }
@@ -298,12 +301,13 @@
                 this.over = false;
                 this.obs = [];
                 this.gems = [];
-                this.shields = []; // Array items escudo
+                this.shields = [];
                 this.lastSpawn = 0;
                 
-                // Sistema de Escudo
+                // Variables del Escudo
                 this.shieldActive = false;
                 this.shieldTimer = null;
+                this.shieldBlinkTimer = null; // Nuevo: Para controlar el parpadeo
                 
                 // Nivel inicial
                 this.currentLevel = 1; 
@@ -359,7 +363,7 @@
                 if (this.shieldActive) {
                     this.shieldAura.x = this.player.x;
                     this.shieldAura.y = this.player.y;
-                    this.shieldAura.angle += 2; // Rotación efecto
+                    this.shieldAura.angle += 2;
                 }
 
                 this.dist += (this.speed * delta / 1000) / 5;
@@ -431,14 +435,13 @@
                 this.tweens.add({ targets: obs, alpha: 1, duration: 200 });
                 this.obs.push(obs);
 
-                // Lógica de Spawn de Ítems
                 const rand = Math.random();
-                if(rand < 0.05) { // 5% Probabilidad ESCUDO
+                if(rand < 0.05) { 
                     const itemY = isTop ? 700 : 100;
                     const shield = this.add.sprite(500 + Phaser.Math.Between(0, 50), itemY, 'shield_item').setDepth(6);
                     this.tweens.add({ targets: shield, scale: 1.2, yoyo: true, repeat: -1, duration: 500 });
                     this.shields.push(shield);
-                } else if (rand < 0.45) { // 40% Probabilidad GEMA
+                } else if (rand < 0.45) { 
                     const itemY = isTop ? 700 : 100;
                     const gem = this.add.sprite(500 + Phaser.Math.Between(0, 50), itemY, 'gem').setDepth(6);
                     gem.setTint(tint);
@@ -450,7 +453,6 @@
             updateEntities(delta) {
                 const move = (this.speed + this.score * 0.2) * delta / 1000;
 
-                // OBSTÁCULOS
                 for (let i = this.obs.length - 1; i >= 0; i--) {
                     const o = this.obs[i];
                     o.x -= move;
@@ -458,7 +460,6 @@
                     
                     if (Math.abs(this.player.x - o.x) < 30 && Math.abs(this.player.y - o.y) < (o.displayHeight/2 + 15)) {
                         if (this.shieldActive) {
-                            // ROMPER OBSTÁCULO
                             this.smashObstacle(o);
                             this.obs.splice(i, 1);
                         } else {
@@ -467,7 +468,6 @@
                     }
                 }
 
-                // GEMAS
                 for (let i = this.gems.length - 1; i >= 0; i--) {
                     const g = this.gems[i];
                     g.x -= move;
@@ -477,7 +477,6 @@
                     }
                 }
 
-                // ESCUDOS
                 for (let i = this.shields.length - 1; i >= 0; i--) {
                     const s = this.shields[i];
                     s.x -= move;
@@ -491,8 +490,6 @@
             smashObstacle(obs) {
                 audio.playSmash();
                 this.cameras.main.shake(100, 0.01);
-                
-                // Partículas explosión
                 for(let k=0; k<8; k++) {
                     const p = this.add.rectangle(obs.x, obs.y, 8, 8, obs.tintTopLeft);
                     this.tweens.add({
@@ -506,33 +503,40 @@
                 obs.destroy();
             }
 
+            // === FUNCIÓN DE ESCUDO CORREGIDA ===
             activateShield(sprite, index) {
                 sprite.destroy();
                 this.shields.splice(index, 1);
                 
                 audio.playShield();
                 this.shieldActive = true;
+                
+                // 1. LIMPIEZA TOTAL: Detener timers y animaciones viejas
+                if (this.shieldTimer) this.shieldTimer.remove();
+                if (this.shieldBlinkTimer) this.shieldBlinkTimer.remove();
+                this.tweens.killTweensOf(this.shieldAura);
+                
+                // 2. RESTAURAR VISUAL
                 this.shieldAura.setAlpha(1);
                 this.shieldAura.setTint(0x00ffff);
                 
-                // Texto flotante
                 const txt = this.add.text(this.player.x, this.player.y - 50, 'ESCUDO!', { fontSize: '16px', fontFamily: 'Arial Black', color: '#00ffff' }).setOrigin(0.5);
                 this.tweens.add({ targets: txt, y: txt.y - 50, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
 
-                // Reiniciar temporizador si ya tenías escudo
-                if (this.shieldTimer) this.shieldTimer.remove();
-
-                // Parpadeo final
-                this.time.delayedCall(4000, () => {
+                // 3. NUEVO TEMPORIZADOR DE PARPADEO (4s)
+                this.shieldBlinkTimer = this.time.delayedCall(4000, () => {
                     if (this.shieldActive) {
-                        this.tweens.add({ targets: this.shieldAura, alpha: 0.2, yoyo: true, repeat: 10, duration: 100 });
+                        this.tweens.add({ 
+                            targets: this.shieldAura, alpha: 0.2, yoyo: true, repeat: -1, duration: 100 
+                        });
                     }
                 });
 
-                // Apagar escudo
+                // 4. NUEVO TEMPORIZADOR DE APAGADO (6s)
                 this.shieldTimer = this.time.delayedCall(6000, () => {
                     this.shieldActive = false;
-                    this.shieldAura.setAlpha(0);
+                    this.tweens.killTweensOf(this.shieldAura); // IMPORTANTE: Matar parpadeo
+                    this.shieldAura.setAlpha(0); // Ocultar definitivamente
                 });
             }
 
@@ -573,6 +577,10 @@
                 audio.playDeath();
                 this.cameras.main.shake(300, 0.02);
                 this.player.setVisible(false);
+                
+                // IMPORTANTE: Asegurar que el escudo se oculte al morir
+                this.shieldActive = false;
+                this.tweens.killTweensOf(this.shieldAura);
                 this.shieldAura.setAlpha(0);
                 
                 const cx = 225, cy = 400;
@@ -607,7 +615,6 @@
                 btn.on('pointerdown', () => { audio.playScore(); this.scene.restart(); });
             }
         }
-
         // ========================================
         // 5. CONFIGURACIÓN E INICIO
         // ========================================
