@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>MANGA DRIFT</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+<script>
+// ============================================
+// MANGA DRIFT - Orbital Drift Game
+// Estilo Visual: Manga/Anime Comic B&W
+// ============================================
+
+const CONFIG = {
+    width: 400,
+    height: 700,
+    backgroundColor: '#FFFFFF',
+    accentColor: 0xFF0040,
+    accentColorHex: '#FF0040',
+    shipColor: 0x000000,
+    anchorColor: 0x222222,
+    orbitRadius: 80,
+    orbitSpeed: 0.04,
+    shipSpeed: 3,
+    bulletTimeScale: 0.35,
+    anchorDetectionRadius: 130,
+    cableLength: 150,
+};
+
+// ============================================
+// SISTEMA DE AUDIO - Generador de sonidos procedurales
+// ============================================
+class AudioManager {
+    constructor() {
+        this.audioContext = null;
+        this.musicGain = null;
+        this.sfxGain = null;
+        this.isInitialized = false;
+        this.musicNodes = [];
+    }
+
+    init() {
+        if (this.isInitialized) return;
+
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Master gains
+            this.musicGain = this.audioContext.createGain();
+            this.musicGain.gain.value = 0.3;
+            this.musicGain.connect(this.audioContext.destination);
+
+            this.sfxGain = this.audioContext.createGain();
+            this.sfxGain.gain.value = 0.5;
+            this.sfxGain.connect(this.audioContext.destination);
+
+            this.isInitialized = true;
+        } catch (e) {
+            console.log('Web Audio not supported');
+        }
+    }
+
+    // Música hipnótica de fondo con arpegiador
+    startMusic() {
+        if (!this.isInitialized) return;
+
+        this.stopMusic();
+
+        const ctx = this.audioContext;
+        const now = ctx.currentTime;
+
+        // Crear un drone bass continuo
+        const droneOsc = ctx.createOscillator();
+        const droneGain = ctx.createGain();
+        const droneFilter = ctx.createBiquadFilter();
+
+        droneOsc.type = 'sawtooth';
+        droneOsc.frequency.value = 55; // A1
+        droneFilter.type = 'lowpass';
+        droneFilter.frequency.value = 200;
+        droneGain.gain.value = 0.15;
+
+        droneOsc.connect(droneFilter);
+        droneFilter.connect(droneGain);
+        droneGain.connect(this.musicGain);
+        droneOsc.start();
+
+        this.musicNodes.push({ osc: droneOsc, gain: droneGain });
+
+        // Arpegiador hipnótico
+        const notes = [110, 138.59, 164.81, 220, 164.81, 138.59]; // Am arpeggio
+        let noteIndex = 0;
+
+        const playArpNote = () => {
+            if (!this.isInitialized) return;
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+
+            osc.type = 'triangle';
+            osc.frequency.value = notes[noteIndex];
+
+            filter.type = 'lowpass';
+            filter.frequency.value = 800;
+
+            gain.gain.setValueAtTime(0.12, ctx.currentTime);
+            gain.gain.exponentialDecayTo = 0.001;
+            gain.gain.setTargetAtTime(0.001, ctx.currentTime + 0.1, 0.1);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.musicGain);
+
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+
+            noteIndex = (noteIndex + 1) % notes.length;
+        };
+
+        // Intervalo del arpegiador (tempo hipnótico ~120 BPM)
+        this.arpInterval = setInterval(playArpNote, 200);
+
+        // Pad atmosférico
+        const padOsc1 = ctx.createOscillator();
+        const padOsc2 = ctx.createOscillator();
+        const padGain = ctx.createGain();
+        const padFilter = ctx.createBiquadFilter();
+
+        padOsc1.type = 'sine';
+        padOsc1.frequency.value = 220;
+        padOsc2.type = 'sine';
+        padOsc2.frequency.value = 330;
+
+        padFilter.type = 'lowpass';
+        padFilter.frequency.value = 400;
+
+        padGain.gain.value = 0.05;
+
+        padOsc1.connect(padFilter);
+        padOsc2.connect(padFilter);
+        padFilter.connect(padGain);
+        padGain.connect(this.musicGain);
+
+        padOsc1.start();
+        padOsc2.start();
+
+        this.musicNodes.push({ osc: padOsc1, gain: padGain });
+        this.musicNodes.push({ osc: padOsc2, gain: padGain });
+
+        // LFO para modular el filtro del pad
+        const lfo = ctx.createOscillator();
+        const lfoGain = ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.1;
+        lfoGain.gain.value = 200;
+        lfo.connect(lfoGain);
+        lfoGain.connect(padFilter.frequency);
+        lfo.start();
+
+        this.musicNodes.push({ osc: lfo });
+    }
+
+    stopMusic() {
+        if (this.arpInterval) {
+            clearInterval(this.arpInterval);
+            this.arpInterval = null;
+        }
+
+        this.musicNodes.forEach(node => {
+            try {
+                if (node.osc) node.osc.stop();
+            } catch(e) {}
+        });
+        this.musicNodes = [];
+    }
+
+    // Sonido de enganche "GRAB"
+    playGrab() {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.05);
+        osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+    }
+
+    // Sonido de lanzamiento "ZOOM"
+    playLaunch() {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
+
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+    }
+
+    // Sonido de crash
+    playCrash() {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+
+        // Noise burst
+        const bufferSize = ctx.sampleRate * 0.3;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+        }
+
+        const noise = ctx.createBufferSource();
+        const noiseGain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        noise.buffer = buffer;
+        filter.type = 'lowpass';
+        filter.frequency.value = 1000;
+        noiseGain.gain.value = 0.5;
+
+        noise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(this.sfxGain);
+
+        noise.start();
+
+        // Low impact
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.3);
+
+        oscGain.gain.setValueAtTime(0.4, ctx.currentTime);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+
+        osc.connect(oscGain);
+        oscGain.connect(this.sfxGain);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+    }
+
+    // Sonido de bullet time
+    playBulletTime(active) {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+
+        if (active) {
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
+        } else {
+            osc.frequency.setValueAtTime(400, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
+        }
+
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+    }
+
+    // Sonido de puntos
+    playScore() {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.05);
+
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+    }
+
+    // Sonido de inicio
+    playStart() {
+        if (!this.isInitialized) return;
+
+        const ctx = this.audioContext;
+        const notes = [440, 554, 659, 880];
+
+        notes.forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+
+            const startTime = ctx.currentTime + i * 0.1;
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.15, startTime + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+
+            osc.connect(gain);
+            gain.connect(this.sfxGain);
+
+            osc.start(startTime);
+            osc.stop(startTime + 0.25);
+        });
+    }
+}
+
+// Instancia global del audio
+const audioManager = new AudioManager();
+
+// ============================================
+// ESCENA: TÍTULO (Opening)
+// ============================================
+class TitleScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'TitleScene' });
+    }
+
+    create() {
+        this.cameras.main.setBackgroundColor('#FFFFFF');
+
+        // Crear líneas de velocidad animadas
+        this.speedLines = [];
+        for (let i = 0; i < 30; i++) {
+            const line = this.add.rectangle(
+                Phaser.Math.Between(0, CONFIG.width),
+                Phaser.Math.Between(0, CONFIG.height),
+                Phaser.Math.Between(100, 300),
+                3,
+                0x000000,
+                0.3
+            );
+            line.setAngle(-15);
+            this.speedLines.push({
+                obj: line,
+                speed: Phaser.Math.Between(8, 20)
+            });
+        }
+
+        // Patrón de puntos halftone
+        this.createHalftonePattern();
+
+        // Título principal con efecto de sombra
+        const titleShadow = this.add.text(CONFIG.width / 2 + 4, 200 + 4, 'MANGA\nDRIFT', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '72px',
+            color: '#333333',
+            align: 'center',
+            lineSpacing: -10
+        }).setOrigin(0.5);
+
+        const title = this.add.text(CONFIG.width / 2, 200, 'MANGA\nDRIFT', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '72px',
+            color: '#000000',
+            align: 'center',
+            lineSpacing: -10,
+            stroke: '#FFFFFF',
+            strokeThickness: 4
+        }).setOrigin(0.5);
+
+        // Línea decorativa estilo manga
+        this.add.rectangle(CONFIG.width / 2, 290, 200, 4, 0x000000);
+
+        // Subtítulo
+        this.add.text(CONFIG.width / 2, 320, '- ORBITAL ACTION -', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '18px',
+            color: CONFIG.accentColorHex
+        }).setOrigin(0.5);
+
+        // Icono de nave preview
+        this.createShipPreview(CONFIG.width / 2, 420);
+
+        // Texto "TAP TO START" parpadeante
+        this.tapText = this.add.text(CONFIG.width / 2, 550, '>>> TAP TO START <<<', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '24px',
+            color: '#000000',
+            stroke: '#FFFFFF',
+            strokeThickness: 2
+        }).setOrigin(0.5);
+
+        // Efecto de parpadeo
+        this.tweens.add({
+            targets: this.tapText,
+            alpha: 0.3,
+            duration: 500,
+            yoyo: true,
+            repeat: -1
+        });
+
+        // Instrucciones
+        this.add.text(CONFIG.width / 2, 620, 'HOLD to ORBIT | RELEASE to LAUNCH', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '14px',
+            color: '#666666'
+        }).setOrigin(0.5);
+
+        // Créditos
+        this.add.text(CONFIG.width / 2, 680, '🎵 HYPNOTIC AUDIO ENABLED', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '10px',
+            color: '#999999'
+        }).setOrigin(0.5);
+
+        // Input para comenzar
+        this.input.on('pointerdown', () => {
+            // Inicializar audio en el primer click
+            audioManager.init();
+            audioManager.playStart();
+
+            this.cameras.main.flash(200, 255, 255, 255);
+            this.time.delayedCall(200, () => {
+                this.scene.start('GameScene');
+            });
+        });
+
+        // Efecto de entrada
+        this.cameras.main.fadeIn(500);
+    }
+
+    createHalftonePattern() {
+        const dotSize = 4;
+        const spacing = 12;
+
+        // Esquina superior derecha
+        for (let x = CONFIG.width - 80; x < CONFIG.width; x += spacing) {
+            for (let y = 0; y < 80; y += spacing) {
+                const alpha = 1 - (Math.sqrt(Math.pow(CONFIG.width - x, 2) + Math.pow(y, 2)) / 100);
+                if (alpha > 0) {
+                    this.add.circle(x, y, dotSize * alpha, 0x000000, 0.2);
+                }
+            }
+        }
+
+        // Esquina inferior izquierda
+        for (let x = 0; x < 80; x += spacing) {
+            for (let y = CONFIG.height - 80; y < CONFIG.height; y += spacing) {
+                const alpha = 1 - (Math.sqrt(Math.pow(x, 2) + Math.pow(CONFIG.height - y, 2)) / 100);
+                if (alpha > 0) {
+                    this.add.circle(x, y, dotSize * alpha, 0x000000, 0.2);
+                }
+            }
+        }
+    }
+
+    createShipPreview(x, y) {
+        const ship = this.add.container(x, y);
+
+        const body = this.add.triangle(0, 0, 0, -20, -15, 15, 15, 15, 0x000000);
+        body.setStrokeStyle(3, 0x000000);
+
+        const detail = this.add.triangle(0, 5, 0, -10, -8, 8, 8, 8, CONFIG.accentColor);
+
+        ship.add([body, detail]);
+
+        this.tweens.add({
+            targets: ship,
+            y: y - 10,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    update() {
+        this.speedLines.forEach(line => {
+            line.obj.x -= line.speed;
+            line.obj.y += line.speed * 0.3;
+
+            if (line.obj.x < -200) {
+                line.obj.x = CONFIG.width + 100;
+                line.obj.y = Phaser.Math.Between(-50, CONFIG.height);
+            }
+        });
+    }
+}
+
+// ============================================
+// ESCENA: JUEGO PRINCIPAL
+// ============================================
+class GameScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'GameScene' });
+    }
+
+    create() {
+        this.cameras.main.setBackgroundColor('#FFFFFF');
+
+        // Variables de estado
+        this.score = 0;
+        this.isOrbiting = false;
+        this.currentAnchor = null;
+        this.orbitAngle = 0;
+        this.orbitDirection = 1;
+        this.isBulletTime = false;
+        this.nearestAnchor = null;
+        this.anchorsGrabbed = new Set();
+        this.isGameOver = false;
+
+        // Crear fondo con efecto manga
+        this.createMangaBackground();
+
+        // Crear speed lines en los bordes
+        this.createBorderSpeedLines();
+
+        // Grupo de anclas
+        this.anchors = this.add.group();
+
+        // Crear la nave del jugador PRIMERO
+        this.createShip();
+
+        // Crear anclas iniciales DESPUÉS de crear la nave
+        this.generateInitialAnchors();
+
+        // Crear cable de energía
+        this.cable = this.add.graphics();
+
+        // Trail/estela de la nave
+        this.trail = this.add.graphics();
+        this.trailPoints = [];
+
+        // UI
+        this.createUI();
+
+        // Contenedor para onomatopeyas
+        this.onomatopoeias = this.add.group();
+
+        // Input handlers
+        this.input.on('pointerdown', this.startOrbit, this);
+        this.input.on('pointerup', this.releaseOrbit, this);
+
+        // Velocidad inicial de la nave
+        this.shipVelocity = { x: 0, y: -CONFIG.shipSpeed };
+
+        // Efecto de entrada
+        this.cameras.main.fadeIn(300);
+
+        // Iniciar música
+        audioManager.startMusic();
+
+        // Texto de inicio
+        this.showOnomatopoeia('GO!!', CONFIG.width / 2, CONFIG.height / 2, 48);
+    }
+
+    createMangaBackground() {
+        this.bgGraphics = this.add.graphics();
+        this.halftoneOffset = 0;
+
+        this.bgSpeedLines = [];
+        for (let i = 0; i < 15; i++) {
+            const line = this.add.rectangle(
+                CONFIG.width / 2,
+                Phaser.Math.Between(0, CONFIG.height),
+                CONFIG.width + 200,
+                Phaser.Math.Between(1, 3),
+                0x000000,
+                0.08
+            );
+            this.bgSpeedLines.push({
+                obj: line,
+                baseY: line.y,
+                speed: Phaser.Math.Between(2, 5)
+            });
+        }
+    }
+
+    createBorderSpeedLines() {
+        this.borderLines = this.add.graphics();
+    }
+
+    updateBorderSpeedLines() {
+        this.borderLines.clear();
+        this.borderLines.lineStyle(2, 0x000000, 0.3);
+
+        const time = this.time.now * 0.01;
+        const numLines = 8;
+
+        for (let i = 0; i < numLines; i++) {
+            const y = (time * 3 + i * 100) % (CONFIG.height + 100) - 50;
+            const length = 30 + Math.sin(time + i) * 20;
+            this.borderLines.beginPath();
+            this.borderLines.moveTo(0, y);
+            this.borderLines.lineTo(length, y - 10);
+            this.borderLines.strokePath();
+        }
+
+        for (let i = 0; i < numLines; i++) {
+            const y = (time * 3 + i * 100 + 50) % (CONFIG.height + 100) - 50;
+            const length = 30 + Math.sin(time + i) * 20;
+            this.borderLines.beginPath();
+            this.borderLines.moveTo(CONFIG.width, y);
+            this.borderLines.lineTo(CONFIG.width - length, y - 10);
+            this.borderLines.strokePath();
+        }
+    }
+
+    // CORREGIDO: Generación inicial de planetas
+    generateInitialAnchors() {
+        const shipY = this.ship.y;
+        const shipX = this.ship.x;
+
+        // PRIMER PLANETA: Siempre cerca y arriba de la nave (garantizado alcanzable)
+        const firstX = shipX + Phaser.Math.Between(-50, 50);
+        const firstY = shipY - 100; // Justo arriba de la nave
+        this.createAnchor(
+            Phaser.Math.Clamp(firstX, 80, CONFIG.width - 80),
+            firstY
+        );
+
+        // Generar más planetas hacia arriba
+        for (let i = 1; i < 10; i++) {
+            // Alternar lados para hacer el camino más interesante
+            const side = i % 2 === 0 ? -1 : 1;
+            const x = CONFIG.width / 2 + side * Phaser.Math.Between(40, 120);
+            const y = shipY - 100 - (i * 120) - Phaser.Math.Between(0, 30);
+
+            this.createAnchor(
+                Phaser.Math.Clamp(x, 60, CONFIG.width - 60),
+                y
+            );
+        }
+    }
+
+    createAnchor(x, y) {
+        const anchor = this.add.container(x, y);
+
+        const outerRing = this.add.circle(0, 0, 25, 0xFFFFFF);
+        outerRing.setStrokeStyle(4, 0x000000);
+
+        const innerCircle = this.add.circle(0, 0, 15, 0x000000);
+
+        for (let i = 0; i < 3; i++) {
+            const angle = (i / 3) * Math.PI * 2;
+            const dot = this.add.circle(
+                Math.cos(angle) * 8,
+                Math.sin(angle) * 8,
+                2,
+                0xFFFFFF
+            );
+            anchor.add(dot);
+        }
+
+        const rangeIndicator = this.add.graphics();
+        rangeIndicator.lineStyle(1, 0x000000, 0.2);
+        this.drawDashedCircle(rangeIndicator, 0, 0, CONFIG.anchorDetectionRadius);
+
+        anchor.add([rangeIndicator, outerRing, innerCircle]);
+        anchor.setData('grabbed', false);
+
+        this.anchors.add(anchor);
+
+        this.tweens.add({
+            targets: outerRing,
+            scaleX: 1.1,
+            scaleY: 1.1,
+            duration: 800,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        return anchor;
+    }
+
+    drawDashedCircle(graphics, x, y, radius) {
+        const segments = 24;
+        for (let i = 0; i < segments; i += 2) {
+            const startAngle = (i / segments) * Math.PI * 2;
+            const endAngle = ((i + 1) / segments) * Math.PI * 2;
+
+            graphics.beginPath();
+            graphics.arc(x, y, radius, startAngle, endAngle);
+            graphics.strokePath();
+        }
+    }
+
+    createShip() {
+        this.ship = this.add.container(CONFIG.width / 2, CONFIG.height - 100);
+
+        const body = this.add.triangle(0, 0, 0, -18, -12, 12, 12, 12, 0x000000);
+        body.setStrokeStyle(3, 0x000000);
+
+        const core = this.add.triangle(0, 2, 0, -8, -6, 6, 6, 6, CONFIG.accentColor);
+
+        const engine = this.add.rectangle(0, 14, 8, 6, CONFIG.accentColor);
+        engine.setStrokeStyle(2, 0x000000);
+
+        this.ship.add([engine, body, core]);
+        this.ship.setDepth(100);
+
+        this.shipBody = body;
+    }
+
+    createUI() {
+        const scoreBg = this.add.graphics();
+        scoreBg.fillStyle(0x000000, 1);
+        scoreBg.fillRect(10, 10, 120, 40);
+        scoreBg.lineStyle(3, 0x000000);
+        scoreBg.strokeRect(10, 10, 120, 40);
+
+        const scoreInner = this.add.graphics();
+        scoreInner.fillStyle(0xFFFFFF, 1);
+        scoreInner.fillRect(14, 14, 112, 32);
+
+        this.scoreText = this.add.text(20, 18, 'SCORE: 0', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '20px',
+            color: '#000000'
+        });
+
+        this.bulletTimeText = this.add.text(CONFIG.width / 2, 60, '>>> SLOW MOTION <<<', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '16px',
+            color: CONFIG.accentColorHex,
+            stroke: '#000000',
+            strokeThickness: 2
+        }).setOrigin(0.5).setAlpha(0);
+
+        scoreBg.setScrollFactor(0);
+        scoreInner.setScrollFactor(0);
+        this.scoreText.setScrollFactor(0);
+        this.bulletTimeText.setScrollFactor(0);
+    }
+
+    startOrbit() {
+        if (this.isGameOver) return;
+
+        if (this.nearestAnchor && !this.isOrbiting) {
+            this.isOrbiting = true;
+            this.currentAnchor = this.nearestAnchor;
+
+            const dx = this.ship.x - this.currentAnchor.x;
+            const dy = this.ship.y - this.currentAnchor.y;
+            this.orbitAngle = Math.atan2(dy, dx);
+
+            const cross = dx * this.shipVelocity.y - dy * this.shipVelocity.x;
+            this.orbitDirection = cross > 0 ? 1 : -1;
+
+            this.setBulletTime(false);
+
+            // Sonido de enganche
+            audioManager.playGrab();
+
+            this.showOnomatopoeia('GRAB!', this.ship.x, this.ship.y - 40, 24);
+            this.cameras.main.shake(100, 0.005);
+
+            if (!this.anchorsGrabbed.has(this.currentAnchor)) {
+                this.anchorsGrabbed.add(this.currentAnchor);
+                this.score += 100;
+                this.scoreText.setText('SCORE: ' + this.score);
+                audioManager.playScore();
+
+                this.currentAnchor.list[1].setFillStyle(CONFIG.accentColor);
+            }
+        }
+    }
+
+    releaseOrbit() {
+        if (this.isGameOver) return;
+
+        if (this.isOrbiting) {
+            this.isOrbiting = false;
+
+            const tangentAngle = this.orbitAngle + (Math.PI / 2) * this.orbitDirection;
+            const speed = CONFIG.shipSpeed * 2.5;
+
+            this.shipVelocity = {
+                x: Math.cos(tangentAngle) * speed,
+                y: Math.sin(tangentAngle) * speed
+            };
+
+            this.ship.rotation = Math.atan2(this.shipVelocity.y, this.shipVelocity.x) + Math.PI / 2;
+
+            // Sonido de lanzamiento
+            audioManager.playLaunch();
+
+            this.showOnomatopoeia('ZOOM!', this.ship.x, this.ship.y, 28);
+
+            this.currentAnchor = null;
+        }
+    }
+
+    showOnomatopoeia(text, x, y, size = 24) {
+        const onomatopoeia = this.add.text(x, y, text, {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: size + 'px',
+            color: '#000000',
+            stroke: '#FFFFFF',
+            strokeThickness: 4
+        }).setOrigin(0.5);
+
+        onomatopoeia.setRotation(Phaser.Math.Between(-15, 15) * Math.PI / 180);
+
+        this.tweens.add({
+            targets: onomatopoeia,
+            y: y - 50,
+            alpha: 0,
+            scaleX: 1.5,
+            scaleY: 1.5,
+            duration: 600,
+            ease: 'Power2',
+            onComplete: () => onomatopoeia.destroy()
+        });
+    }
+
+    setBulletTime(active) {
+        if (active && !this.isBulletTime) {
+            this.isBulletTime = true;
+            this.time.timeScale = CONFIG.bulletTimeScale;
+            this.tweens.timeScale = CONFIG.bulletTimeScale;
+
+            audioManager.playBulletTime(true);
+
+            this.tweens.add({
+                targets: this.bulletTimeText,
+                alpha: 1,
+                duration: 100
+            });
+
+        } else if (!active && this.isBulletTime) {
+            this.isBulletTime = false;
+            this.time.timeScale = 1;
+            this.tweens.timeScale = 1;
+
+            audioManager.playBulletTime(false);
+
+            this.tweens.add({
+                targets: this.bulletTimeText,
+                alpha: 0,
+                duration: 100
+            });
+        }
+    }
+
+    findNearestAnchor() {
+        let nearest = null;
+        let nearestDist = Infinity;
+
+        this.anchors.getChildren().forEach(anchor => {
+            const dist = Phaser.Math.Distance.Between(
+                this.ship.x, this.ship.y,
+                anchor.x, anchor.y
+            );
+
+            if (dist < CONFIG.anchorDetectionRadius && dist < nearestDist) {
+                nearest = anchor;
+                nearestDist = dist;
+            }
+        });
+
+        return nearest;
+    }
+
+    updateTrail() {
+        this.trailPoints.push({ x: this.ship.x, y: this.ship.y, alpha: 1 });
+
+        if (this.trailPoints.length > 20) {
+            this.trailPoints.shift();
+        }
+
+        this.trail.clear();
+
+        for (let i = 0; i < this.trailPoints.length - 1; i++) {
+            const point = this.trailPoints[i];
+            const nextPoint = this.trailPoints[i + 1];
+            const alpha = (i / this.trailPoints.length) * 0.5;
+            const thickness = (i / this.trailPoints.length) * 4;
+
+            this.trail.lineStyle(thickness, CONFIG.accentColor, alpha);
+            this.trail.beginPath();
+            this.trail.moveTo(point.x, point.y);
+            this.trail.lineTo(nextPoint.x, nextPoint.y);
+            this.trail.strokePath();
+        }
+    }
+
+    updateCable() {
+        this.cable.clear();
+
+        if (this.isOrbiting && this.currentAnchor) {
+            this.cable.lineStyle(3, 0x000000, 1);
+            this.cable.beginPath();
+            this.cable.moveTo(this.ship.x, this.ship.y);
+            this.cable.lineTo(this.currentAnchor.x, this.currentAnchor.y);
+            this.cable.strokePath();
+
+            this.cable.lineStyle(1, CONFIG.accentColor, 0.8);
+            const segments = 8;
+            for (let i = 0; i < segments; i++) {
+                const t = i / segments;
+                const x = Phaser.Math.Linear(this.ship.x, this.currentAnchor.x, t);
+                const y = Phaser.Math.Linear(this.ship.y, this.currentAnchor.y, t);
+                const offset = Math.sin(this.time.now * 0.02 + i) * 5;
+
+                this.cable.fillStyle(CONFIG.accentColor, 0.8);
+                this.cable.fillCircle(x + offset, y, 2);
+            }
+        } else if (this.nearestAnchor && !this.isOrbiting) {
+            this.cable.lineStyle(2, 0x000000, 0.3);
+
+            const dx = this.nearestAnchor.x - this.ship.x;
+            const dy = this.nearestAnchor.y - this.ship.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const segments = Math.floor(dist / 15);
+
+            for (let i = 0; i < segments; i += 2) {
+                const t1 = i / segments;
+                const t2 = (i + 1) / segments;
+
+                this.cable.beginPath();
+                this.cable.moveTo(
+                    this.ship.x + dx * t1,
+                    this.ship.y + dy * t1
+                );
+                this.cable.lineTo(
+                    this.ship.x + dx * t2,
+                    this.ship.y + dy * t2
+                );
+                this.cable.strokePath();
+            }
+        }
+    }
+
+    // CORREGIDO: Verificación de límites usando coordenadas de cámara
+    checkBounds() {
+        if (this.isGameOver) return;
+
+        const camera = this.cameras.main;
+        const margin = 60;
+
+        // Obtener la posición de la nave relativa a la vista de la cámara
+        const shipScreenX = this.ship.x;
+        const shipScreenY = this.ship.y - camera.scrollY;
+
+        // Solo verificar límites horizontales (la nave no debe salir por los lados)
+        const outLeft = this.ship.x < -margin;
+        const outRight = this.ship.x > CONFIG.width + margin;
+
+        // Verificar si la nave se fue muy abajo de la vista actual
+        const outBottom = shipScreenY > CONFIG.height + margin;
+
+        // Verificar si la nave se fue muy arriba (demasiado lejos sin planetas)
+        // Solo si no hay planetas cerca
+        const outTop = shipScreenY < -CONFIG.height;
+
+        if (outLeft || outRight || outBottom || outTop) {
+            this.gameOver();
+        }
+    }
+
+    gameOver() {
+        if (this.isGameOver) return;
+        this.isGameOver = true;
+
+        this.setBulletTime(false);
+
+        // Parar música y tocar sonido de crash
+        audioManager.stopMusic();
+        audioManager.playCrash();
+
+        this.showOnomatopoeia('CRASH!!', this.ship.x, this.ship.y, 40);
+
+        this.cameras.main.shake(300, 0.02);
+        this.cameras.main.flash(200, 255, 0, 64);
+
+        this.time.delayedCall(500, () => {
+            this.scene.start('GameOverScene', { score: this.score });
+        });
+    }
+
+    generateMoreAnchors() {
+        const topAnchor = this.getTopAnchor();
+
+        if (topAnchor && this.ship.y < topAnchor.y + 300) {
+            // Generar planetas en posiciones alcanzables
+            for (let i = 0; i < 4; i++) {
+                const side = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
+                const x = CONFIG.width / 2 + side * Phaser.Math.Between(30, 130);
+                const y = topAnchor.y - 100 - (i * 120) - Phaser.Math.Between(0, 30);
+
+                this.createAnchor(
+                    Phaser.Math.Clamp(x, 60, CONFIG.width - 60),
+                    y
+                );
+            }
+        }
+
+        // Eliminar anclas muy abajo
+        this.anchors.getChildren().forEach(anchor => {
+            if (anchor.y > this.ship.y + 400) {
+                anchor.destroy();
+            }
+        });
+    }
+
+    getTopAnchor() {
+        let top = null;
+        let topY = Infinity;
+
+        this.anchors.getChildren().forEach(anchor => {
+            if (anchor.y < topY) {
+                topY = anchor.y;
+                top = anchor;
+            }
+        });
+
+        return top;
+    }
+
+    update(time, delta) {
+        if (!this.ship || this.isGameOver) return;
+
+        this.nearestAnchor = this.findNearestAnchor();
+
+        if (this.nearestAnchor && !this.isOrbiting) {
+            this.setBulletTime(true);
+        } else if (!this.isOrbiting) {
+            this.setBulletTime(false);
+        }
+
+        if (this.isOrbiting && this.currentAnchor) {
+            this.orbitAngle += CONFIG.orbitSpeed * this.orbitDirection;
+
+            this.ship.x = this.currentAnchor.x + Math.cos(this.orbitAngle) * CONFIG.orbitRadius;
+            this.ship.y = this.currentAnchor.y + Math.sin(this.orbitAngle) * CONFIG.orbitRadius;
+
+            const tangentAngle = this.orbitAngle + (Math.PI / 2) * this.orbitDirection;
+            this.ship.rotation = tangentAngle + Math.PI / 2;
+
+        } else {
+            this.ship.x += this.shipVelocity.x;
+            this.ship.y += this.shipVelocity.y;
+
+            this.shipVelocity.y += 0.02;
+
+            // Rotar nave hacia la dirección del movimiento
+            this.ship.rotation = Math.atan2(this.shipVelocity.y, this.shipVelocity.x) + Math.PI / 2;
+        }
+
+        // Cámara sigue a la nave
+        const targetY = this.ship.y - CONFIG.height / 2 + 150;
+        this.cameras.main.scrollY = Phaser.Math.Linear(
+            this.cameras.main.scrollY,
+            targetY,
+            0.08
+        );
+
+        if (this.cameras.main.scrollY > 0) {
+            this.cameras.main.scrollY = 0;
+        }
+
+        this.updateTrail();
+        this.updateCable();
+        this.updateBorderSpeedLines();
+
+        this.bgSpeedLines.forEach((line, i) => {
+            line.obj.y = line.baseY + this.cameras.main.scrollY;
+            line.obj.alpha = 0.05 + Math.sin(time * 0.003 + i) * 0.03;
+        });
+
+        this.checkBounds();
+        this.generateMoreAnchors();
+
+        if (!this.isOrbiting && this.shipVelocity.y < 0) {
+            this.score += 1;
+            this.scoreText.setText('SCORE: ' + this.score);
+        }
+    }
+}
+
+// ============================================
+// ESCENA: GAME OVER
+// ============================================
+class GameOverScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'GameOverScene' });
+    }
+
+    init(data) {
+        this.finalScore = data.score || 0;
+    }
+
+    create() {
+        this.cameras.main.setBackgroundColor('#FFFFFF');
+
+        this.createDramaticBackground();
+
+        const panelGraphics = this.add.graphics();
+
+        panelGraphics.fillStyle(0x000000, 1);
+        panelGraphics.fillRect(30, 150, CONFIG.width - 60, 300);
+
+        panelGraphics.fillStyle(0xFFFFFF, 1);
+        panelGraphics.fillRect(40, 160, CONFIG.width - 80, 280);
+
+        panelGraphics.lineStyle(3, 0x000000, 0.1);
+        for (let i = 0; i < 20; i++) {
+            const x = 40 + i * 20;
+            panelGraphics.beginPath();
+            panelGraphics.moveTo(x, 160);
+            panelGraphics.lineTo(x - 100, 440);
+            panelGraphics.strokePath();
+        }
+
+        const crashShadow = this.add.text(CONFIG.width / 2 + 5, 235, 'CRASHED', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '56px',
+            color: '#333333'
+        }).setOrigin(0.5);
+
+        const crashText = this.add.text(CONFIG.width / 2, 230, 'CRASHED', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '56px',
+            color: '#000000',
+            stroke: '#FFFFFF',
+            strokeThickness: 4
+        }).setOrigin(0.5);
+
+        crashText.setScale(3);
+        crashText.setAlpha(0);
+
+        this.tweens.add({
+            targets: [crashText, crashShadow],
+            scale: 1,
+            alpha: 1,
+            duration: 400,
+            ease: 'Back.easeOut'
+        });
+
+        this.add.rectangle(CONFIG.width / 2, 280, 180, 4, CONFIG.accentColor);
+
+        this.add.text(CONFIG.width / 2, 320, 'FINAL SCORE', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '14px',
+            color: '#666666'
+        }).setOrigin(0.5);
+
+        const scoreText = this.add.text(CONFIG.width / 2, 360, this.finalScore.toString(), {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '48px',
+            color: CONFIG.accentColorHex,
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: scoreText,
+            scale: 1.1,
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        this.createRetryButton();
+
+        this.add.text(CONFIG.width / 2, 650, '- TRY AGAIN -', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '12px',
+            color: '#999999'
+        }).setOrigin(0.5);
+
+        this.cameras.main.fadeIn(300);
+    }
+
+    createDramaticBackground() {
+        const graphics = this.add.graphics();
+        graphics.lineStyle(2, 0x000000, 0.1);
+
+        const centerX = CONFIG.width / 2;
+        const centerY = 300;
+
+        for (let i = 0; i < 36; i++) {
+            const angle = (i / 36) * Math.PI * 2;
+            const innerRadius = 50;
+            const outerRadius = 400;
+
+            graphics.beginPath();
+            graphics.moveTo(
+                centerX + Math.cos(angle) * innerRadius,
+                centerY + Math.sin(angle) * innerRadius
+            );
+            graphics.lineTo(
+                centerX + Math.cos(angle) * outerRadius,
+                centerY + Math.sin(angle) * outerRadius
+            );
+            graphics.strokePath();
+        }
+
+        this.createCornerHalftone();
+    }
+
+    createCornerHalftone() {
+        const dotSize = 3;
+        const spacing = 10;
+
+        const corners = [
+            { x: 0, y: 0, dx: 1, dy: 1 },
+            { x: CONFIG.width, y: 0, dx: -1, dy: 1 },
+            { x: 0, y: CONFIG.height, dx: 1, dy: -1 },
+            { x: CONFIG.width, y: CONFIG.height, dx: -1, dy: -1 }
+        ];
+
+        corners.forEach(corner => {
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const x = corner.x + (i * spacing * corner.dx);
+                    const y = corner.y + (j * spacing * corner.dy);
+                    const alpha = 0.3 - (i + j) * 0.02;
+
+                    if (alpha > 0) {
+                        this.add.circle(x, y, dotSize, 0x000000, alpha);
+                    }
+                }
+            }
+        });
+    }
+
+    createRetryButton() {
+        const buttonBg = this.add.graphics();
+
+        buttonBg.fillStyle(0x000000, 1);
+        buttonBg.fillRect(CONFIG.width / 2 - 77, 503, 160, 55);
+
+        buttonBg.fillStyle(CONFIG.accentColor, 1);
+        buttonBg.fillRect(CONFIG.width / 2 - 80, 500, 160, 55);
+
+        buttonBg.lineStyle(4, 0x000000, 1);
+        buttonBg.strokeRect(CONFIG.width / 2 - 80, 500, 160, 55);
+
+        const retryText = this.add.text(CONFIG.width / 2, 527, 'RETRY', {
+            fontFamily: 'Impact, Arial Black, sans-serif',
+            fontSize: '28px',
+            color: '#FFFFFF',
+            stroke: '#000000',
+            strokeThickness: 3
+        }).setOrigin(0.5);
+
+        const hitArea = this.add.rectangle(CONFIG.width / 2, 527, 160, 55, 0xffffff, 0);
+        hitArea.setInteractive({ useHandCursor: true });
+
+        hitArea.on('pointerover', () => {
+            buttonBg.clear();
+            buttonBg.fillStyle(0x000000, 1);
+            buttonBg.fillRect(CONFIG.width / 2 - 77, 503, 160, 55);
+            buttonBg.fillStyle(0xFF3366, 1);
+            buttonBg.fillRect(CONFIG.width / 2 - 80, 500, 160, 55);
+            buttonBg.lineStyle(4, 0x000000, 1);
+            buttonBg.strokeRect(CONFIG.width / 2 - 80, 500, 160, 55);
+        });
+
+        hitArea.on('pointerout', () => {
+            buttonBg.clear();
+            buttonBg.fillStyle(0x000000, 1);
+            buttonBg.fillRect(CONFIG.width / 2 - 77, 503, 160, 55);
+            buttonBg.fillStyle(CONFIG.accentColor, 1);
+            buttonBg.fillRect(CONFIG.width / 2 - 80, 500, 160, 55);
+            buttonBg.lineStyle(4, 0x000000, 1);
+            buttonBg.strokeRect(CONFIG.width / 2 - 80, 500, 160, 55);
+        });
+
+        hitArea.on('pointerdown', () => {
+            audioManager.playStart();
+            this.cameras.main.flash(200, 255, 255, 255);
+            this.time.delayedCall(200, () => {
+                this.scene.start('GameScene');
+            });
+        });
+
+        this.tweens.add({
+            targets: [retryText],
+            scale: 1.05,
+            duration: 400,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+    }
+}
+
+// ============================================
+// CONFIGURACIÓN DE PHASER
+// ============================================
+const config = {
+    type: Phaser.AUTO,
+    width: CONFIG.width,
+    height: CONFIG.height,
+    parent: document.body,
+    backgroundColor: '#FFFFFF',
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: [TitleScene, GameScene, GameOverScene],
+    physics: {
+        default: 'arcade',
+        arcade: {
+            debug: false
+        }
+    },
+    input: {
+        activePointers: 1
+    }
+};
+
+// Iniciar juego
+const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
