@@ -3,28 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squeak Squad - Juego de Ritmo y Memoria</title>
+    <title>Squeak Squad - Remastered</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: #111;
             font-family: 'Arial', sans-serif;
             overflow: hidden;
-            touch-action: none; /* Crucial para móviles */
+            touch-action: none;
         }
         #game-container {
             border-radius: 20px;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
         }
     </style>
 </head>
@@ -33,326 +29,235 @@
 
     <script>
     // ============================================
-    // CONFIGURACIÓN GLOBAL
-    // ============================================
-    const gameInstance = {
-        audioManager: null,
-        currentScene: null
-    };
-
-    // ============================================
     // SISTEMA DE AUDIO
     // ============================================
+    const gameInstance = { audioManager: null };
+
     class AudioManager {
         constructor() {
-            this.audioContext = null;
+            this.ctx = null;
             this.initialized = false;
         }
-
         async init() {
+            if (this.initialized) return;
             try {
-                if (!this.audioContext) {
-                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (this.audioContext.state === 'suspended') {
-                    await this.audioContext.resume();
-                }
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.ctx.state === 'suspended') await this.ctx.resume();
                 this.initialized = true;
-                return true;
-            } catch (e) {
-                console.warn("Audio no pudo iniciarse:", e);
-                return false;
-            }
+            } catch (e) { console.warn("Audio error", e); }
         }
-
-        playQuack(frequency, duration = 0.3) {
-            if (!this.initialized || !this.audioContext) return;
-            try {
-                const ctx = this.audioContext;
-                const oscillator = ctx.createOscillator();
-                const gainNode = ctx.createGain();
-
-                oscillator.type = 'square';
-                oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
-                oscillator.frequency.exponentialRampToValueAtTime(frequency * 0.5, ctx.currentTime + duration * 0.3);
-
-                gainNode.gain.setValueAtTime(0.4, ctx.currentTime);
-                gainNode.gain.exponentialRampToValueAtTime(0, ctx.currentTime + duration);
-
-                oscillator.connect(gainNode);
-                gainNode.connect(ctx.destination);
-
-                oscillator.start(ctx.currentTime);
-                oscillator.stop(ctx.currentTime + duration);
-            } catch (e) { console.error("Error audio", e); }
-        }
-
-        playError() {
-            if (!this.initialized || !this.audioContext) return;
-            try {
-                const ctx = this.audioContext;
-                const oscillator = ctx.createOscillator();
-                const gainNode = ctx.createGain();
-
-                oscillator.type = 'sawtooth';
-                oscillator.frequency.setValueAtTime(150, ctx.currentTime);
-                oscillator.frequency.linearRampToValueAtTime(50, ctx.currentTime + 0.5);
-
-                gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-                gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
-
-                oscillator.connect(gainNode);
-                gainNode.connect(ctx.destination);
-
-                oscillator.start(ctx.currentTime);
-                oscillator.stop(ctx.currentTime + 0.5);
-            } catch (e) {}
-        }
-
-        getFrequencies() {
-            return [523.25, 659.25, 783.99, 1046.50];
+        playTone(freq, type = 'sine') {
+            if (!this.initialized) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.3);
         }
     }
-
     gameInstance.audioManager = new AudioManager();
 
     // ============================================
-    // ESCENA DE TÍTULO
+    // ESCENA TÍTULO
     // ============================================
     class TitleScene extends Phaser.Scene {
         constructor() { super({ key: 'TitleScene' }); }
-
+        preload() { this.load.image('pato', 'pato.png'); } // Carga tu imagen aquí
         create() {
-            this.add.rectangle(400, 300, 800, 600, 0x87CEEB); 
-            
-            // Título
-            this.add.text(400, 200, 'SQUEAK SQUAD', {
-                fontSize: '64px', fontFamily: 'Arial Black', color: '#FFD700', stroke: '#FF6B35', strokeThickness: 8
+            // Fondo con degradado radial elegante
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x2c3e50, 0x2c3e50, 0x000000, 0x000000, 1);
+            bg.fillRect(0, 0, 800, 600);
+
+            this.add.text(400, 200, 'SQUEAK\nSQUAD', {
+                fontSize: '80px', fontFamily: 'Arial Black', color: '#FFF',
+                align: 'center', stroke: '#000', strokeThickness: 10,
+                shadow: { offsetX: 5, offsetY: 5, color: '#FF00DE', blur: 10, fill: true }
             }).setOrigin(0.5);
 
-            // Botón
-            const startButton = this.add.container(400, 400);
-            const bg = this.add.rectangle(0, 0, 280, 70, 0xFF6B35).setStrokeStyle(4, 0xFFFFFF);
-            const txt = this.add.text(0, 0, 'TAP TO QUACK', { fontSize: '28px', fontFamily: 'Arial Black' }).setOrigin(0.5);
-            startButton.add([bg, txt]);
-
-            // Animación botón
-            this.tweens.add({ targets: startButton, scale: 1.05, duration: 500, yoyo: true, repeat: -1 });
-
-            // Interacción
-            startButton.setInteractive(new Phaser.Geom.Rectangle(-140, -35, 280, 70), Phaser.Geom.Rectangle.Contains);
+            const btn = this.add.container(400, 450);
+            const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00ffaa).setAlpha(0.8);
+            const btnTxt = this.add.text(0, 0, 'JUGAR', { fontSize: '40px', fontFamily: 'Arial Black', color: '#000' }).setOrigin(0.5);
+            btn.add([btnBg, btnTxt]);
             
-            startButton.once('pointerdown', () => {
-                gameInstance.audioManager.init().catch(e => console.log(e));
-                gameInstance.audioManager.playQuack(523.25);
-                
-                this.tweens.add({
-                    targets: startButton, scale: 0.9, duration: 100, yoyo: true,
-                    onComplete: () => this.scene.start('GameScene')
-                });
+            // Animación del botón
+            this.tweens.add({ targets: btn, scale: 1.05, duration: 600, yoyo: true, repeat: -1 });
+
+            btn.setInteractive(new Phaser.Geom.Rectangle(-150, -40, 300, 80), Phaser.Geom.Rectangle.Contains);
+            btn.once('pointerdown', () => {
+                gameInstance.audioManager.init();
+                this.scene.start('GameScene');
             });
-
-            // --- DETECCIÓN DE MÓVIL CORRECTA ---
-            if (!this.sys.game.device.os.desktop) {
-                const mobileMsg = this.add.text(400, 550, '📱 MEJOR EXPERIENCIA: GIRA TU MÓVIL 🔄', {
-                    fontSize: '20px',
-                    fontFamily: 'Arial',
-                    color: '#ffffff',
-                    backgroundColor: '#00000088',
-                    padding: { x: 10, y: 5 }
-                }).setOrigin(0.5);
-
-                this.tweens.add({
-                    targets: mobileMsg,
-                    alpha: 0.2,
-                    duration: 800,
-                    yoyo: true,
-                    repeat: -1
-                });
-            }
         }
     }
 
     // ============================================
     // ESCENA DE JUEGO
     // ============================================
-   // ============================================
-    // ESCENA DE JUEGO (MODIFICADA CON IMÁGENES)
-    // ============================================
     class GameScene extends Phaser.Scene {
         constructor() { super({ key: 'GameScene' }); }
 
-        // 1. CARGAMOS LA IMAGEN AQUÍ
-        preload() {
-            // Carga la imagen 'pato.png' que debe estar junto a tu HTML.
-            // Si no tienes imagen aún, Phaser pondrá un cuadro verde de error (es normal).
-            this.load.image('pato', 'pato.png'); 
-        }
-
         create() {
-            gameInstance.currentScene = this;
+            // Fondo degradado (Azul baño brillante)
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x4FACFE, 0x4FACFE, 0x00F2FE, 0x00F2FE, 1);
+            bg.fillRect(0, 0, 800, 600);
+            
             this.sequence = [];
             this.playerSequence = [];
-            this.round = 0; 
             this.inputBlocked = true;
+            this.round = 0;
 
-            this.createBackground();
             this.createDucks();
-            this.createUI();
+            
+            // Texto de estado
+            this.statusText = this.add.text(400, 100, 'PREPÁRATE', {
+                fontSize: '40px', fontFamily: 'Arial Black', color: '#FFF',
+                stroke: '#000', strokeThickness: 6
+            }).setOrigin(0.5);
 
             this.time.delayedCall(1000, () => this.startRound());
         }
 
-        createBackground() {
-            this.add.rectangle(400, 300, 800, 600, 0x87CEEB);
-        }
-
-        // 2. AQUÍ PONEMOS LA IMAGEN EN LUGAR DE LAS FORMAS
         createDucks() {
-            const colors = [0xFF6B6B, 0x4ECDC4, 0x95E17C, 0xC77DFF];
-            const xPositions = [200, 333, 466, 600];
+            // Colores vibrantes para los AROS, no para los patos
+            const colors = [0xFF0055, 0x00AAFF, 0x00FF66, 0xFFAA00]; 
+            const freqs = [300, 400, 500, 600];
+            const xPositions = [160, 320, 480, 640];
+            
             this.ducks = [];
 
             xPositions.forEach((x, i) => {
-                const container = this.add.container(x, 320);
-                
-                // --- CAMBIO: Usamos imagen en vez de formas geométricas ---
-                
-                // Brillo (lo dejamos porque se ve bien detrás de la imagen)
-                const glow = this.add.circle(0, 0, 60, colors[i], 0.4).setVisible(false);
+                const container = this.add.container(x, 350);
 
-                // La imagen del pato
-                const duckSprite = this.add.image(0, 0, 'pato');
-                
-                // Ajustamos el tamaño de la imagen (escalala si es muy grande)
-                duckSprite.setDisplaySize(100, 100); 
+                // 1. EL ARO DE COLOR (Base)
+                const ring = this.add.circle(0, 40, 55).setStrokeStyle(8, colors[i]);
+                const glow = this.add.circle(0, 40, 50, colors[i], 0.3).setVisible(false); // Luz interior
 
-                // Teñimos la imagen con el color correspondiente
-                // (Para que esto funcione bien, tu pato original debe ser BLANCO)
-                duckSprite.setTint(colors[i]);
+                // 2. EL PATO (Imagen original blanca)
+                // Ajustamos el origen al fondo (0.5, 1) para que al escalar "aplastado"
+                // se aplaste contra el suelo y no desde el centro.
+                const duckSprite = this.add.image(0, 50, 'pato').setOrigin(0.5, 1);
+                duckSprite.setDisplaySize(110, 110); // Tamaño del pato
 
-                container.add([glow, duckSprite]);
-                // ----------------------------------------------------------
+                // 3. EFECTO DE LUZ SOBRE EL PATO (Sutil)
+                // Si quieres que el pato tenga un leve tinte del color del aro:
+                // duckSprite.setTint(colors[i]); // Descomenta si prefieres tintado completo
 
-                container.glow = glow; 
-                container.setSize(80, 80);
+                container.add([glow, ring, duckSprite]);
                 
-                container.setInteractive(new Phaser.Geom.Rectangle(-40, -40, 80, 80), Phaser.Geom.Rectangle.Contains);
-                container.on('pointerdown', () => this.handleInput(i));
+                // Guardamos referencias
+                container.glow = glow;
+                container.duck = duckSprite;
+                container.freq = freqs[i];
+                container.color = colors[i];
+
+                // 4. ÁREA DE CLICK GIGANTE (SOLUCIÓN FUNCIONALIDAD)
+                // Hacemos el área transparente más grande que el dibujo
+                const hitArea = this.add.rectangle(0, 0, 140, 160, 0x000000, 0); 
+                container.add(hitArea);
                 
+                hitArea.setInteractive({ useHandCursor: true });
+                hitArea.on('pointerdown', () => this.handleInput(i));
+                
+                // Efecto hover (solo PC)
+                hitArea.on('pointerover', () => duckSprite.y = 45);
+                hitArea.on('pointerout', () => duckSprite.y = 50);
+
                 this.ducks.push(container);
             });
         }
 
-        createUI() {
-            this.roundText = this.add.text(700, 50, 'Ronda: 1', { fontSize: '24px', fontFamily: 'Arial Black', color: '#333' }).setOrigin(0.5);
-            this.statusText = this.add.text(400, 500, '¡OBSERVA!', { fontSize: '32px', fontFamily: 'Arial Black', color: '#FF6B35' }).setOrigin(0.5);
-        }
-
         startRound() {
             this.round++;
-            this.roundText.setText('Ronda: ' + this.round);
+            this.statusText.setText('RONDA ' + this.round);
             this.sequence.push(Phaser.Math.Between(0, 3));
             this.playerSequence = [];
-            this.playSequence();
+            
+            this.time.delayedCall(800, () => this.playSequence());
         }
 
         playSequence() {
             this.inputBlocked = true;
-            this.statusText.setText('¡OBSERVA!');
-            
             let i = 0;
-            const speed = Math.max(300, 1000 - (this.round * 50));
+            const speed = Math.max(300, 800 - (this.round * 40));
 
             const playNext = () => {
                 if (i >= this.sequence.length) {
-                    this.time.delayedCall(500, () => {
-                        this.inputBlocked = false;
-                        this.statusText.setText('¡TU TURNO!');
-                    });
+                    this.statusText.setText('¡TU TURNO!');
+                    this.inputBlocked = false;
                     return;
                 }
-                
                 this.activateDuck(this.sequence[i]);
                 i++;
                 this.time.delayedCall(speed, playNext);
             };
-
             playNext();
         }
 
         activateDuck(index) {
-            const duck = this.ducks[index];
-            if (!duck) return;
+            const item = this.ducks[index];
+            
+            // 1. Sonido
+            gameInstance.audioManager.playTone(item.freq);
 
-            duck.glow.setVisible(true);
+            // 2. Visual: El aro brilla
+            item.glow.setVisible(true);
             this.tweens.add({
-                targets: duck,
-                y: 280, 
-                duration: 150,
-                yoyo: true,
-                onComplete: () => duck.glow.setVisible(false)
+                targets: item.glow, alpha: 0, duration: 400,
+                onComplete: () => { item.glow.setVisible(false); item.glow.setAlpha(0.3); }
             });
 
-            try {
-                gameInstance.audioManager.playQuack(gameInstance.audioManager.getFrequencies()[index]);
-            } catch(e) {}
+            // 3. Visual: Squash & Stretch (El "Jugo")
+            // El pato se estira hacia arriba y luego vuelve
+            this.tweens.add({
+                targets: item.duck,
+                scaleY: 1.2, // Se estira
+                scaleX: 0.8, // Se adelgaza
+                y: 30,       // Salta un poco
+                duration: 100,
+                yoyo: true,
+                ease: 'Quad.easeOut'
+            });
         }
 
         handleInput(index) {
             if (this.inputBlocked) return;
-            this.activateDuck(index);
 
-            const expected = this.sequence[this.playerSequence.length];
+            this.activateDuck(index);
             
+            const expected = this.sequence[this.playerSequence.length];
             if (index === expected) {
                 this.playerSequence.push(index);
                 if (this.playerSequence.length === this.sequence.length) {
                     this.inputBlocked = true;
-                    this.statusText.setText('¡BIEN HECHO!');
+                    this.statusText.setText('¡BIEN!');
                     this.time.delayedCall(1000, () => this.startRound());
                 }
             } else {
-                this.gameOver();
+                this.inputBlocked = true;
+                this.cameras.main.shake(300, 0.02); // Temblor de pantalla
+                gameInstance.audioManager.playTone(150, 'sawtooth');
+                this.statusText.setText('¡ERROR!');
+                this.time.delayedCall(1500, () => this.scene.start('TitleScene'));
             }
         }
-
-        gameOver() {
-            this.inputBlocked = true;
-            gameInstance.audioManager.playError();
-            this.scene.start('GameOverScene', { score: this.round });
-        }
-    }
-    // ============================================
-    // ESCENA GAME OVER
-    // ============================================
-    class GameOverScene extends Phaser.Scene {
-        constructor() { super({ key: 'GameOverScene' }); }
-        
-        create(data) {
-            this.add.rectangle(400, 300, 800, 600, 0x222222);
-            this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', color: '#FF4444', fontFamily: 'Arial Black' }).setOrigin(0.5);
-            this.add.text(400, 300, 'Ronda alcanzada: ' + data.score, { fontSize: '32px', color: '#FFF' }).setOrigin(0.5);
-            
-            const btn = this.add.text(400, 450, 'INTENTAR DE NUEVO', { fontSize: '28px', backgroundColor: '#4CAF50', padding: {x:20, y:10} }).setOrigin(0.5);
-            btn.setInteractive({ useHandCursor: true });
-            btn.on('pointerdown', () => this.scene.start('GameScene'));
-        }
     }
 
-    // ============================================
-    // INICIALIZACIÓN DE PHASER
-    // ============================================
     const config = {
         type: Phaser.AUTO,
         scale: {
             mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH,
             width: 800,
-            height: 600,
+            height: 600
         },
-        parent: 'game-container',
-        scene: [TitleScene, GameScene, GameOverScene]
+        scene: [TitleScene, GameScene]
     };
 
     new Phaser.Game(config);
