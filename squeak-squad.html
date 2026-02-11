@@ -175,7 +175,14 @@
 
                 const duckId = 'pato' + selectedDucks[i];
                 const duckSprite = this.add.image(0, 50, duckId).setOrigin(0.5, 1);
-                duckSprite.setDisplaySize(110, 110); 
+                // --- INICIO CORRECCIÓN DE DEFORMACIÓN ---
+                // Definimos un ancho objetivo (por ejemplo, 100px)
+                const targetWidth = 100;
+                // Calculamos el factor de escala necesario para llegar a ese ancho
+                const scaleFactor = targetWidth / duckSprite.width;
+                // Aplicamos la escala. Esto ajusta ancho y alto proporcionalmente.
+                duckSprite.setScale(scaleFactor);
+                // --- FIN CORRECCIÓN ---
 
                 container.add([glow, ring, duckSprite]);
                 
