@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squeak Squad - Remastered</title>
+    <title>Squeak Squad - Duck Chaos</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,14 +12,12 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background: #111;
-            font-family: 'Arial', sans-serif;
+            background: #222;
+            font-family: 'Arial Black', sans-serif;
             overflow: hidden;
             touch-action: none;
         }
         #game-container {
-            border-radius: 20px;
-            overflow: hidden;
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
         }
     </style>
@@ -32,12 +30,8 @@
     // SISTEMA DE AUDIO
     // ============================================
     const gameInstance = { audioManager: null };
-
     class AudioManager {
-        constructor() {
-            this.ctx = null;
-            this.initialized = false;
-        }
+        constructor() { this.ctx = null; this.initialized = false; }
         async init() {
             if (this.initialized) return;
             try {
@@ -63,30 +57,54 @@
     gameInstance.audioManager = new AudioManager();
 
     // ============================================
-    // ESCENA TÍTULO
+    // ESCENA TÍTULO (Fondo Lleno de Patos)
     // ============================================
     class TitleScene extends Phaser.Scene {
         constructor() { super({ key: 'TitleScene' }); }
-        preload() { this.load.image('pato', 'pato.png'); } // Carga tu imagen aquí
-        create() {
-            // Fondo con degradado radial elegante
-            const bg = this.add.graphics();
-            bg.fillGradientStyle(0x2c3e50, 0x2c3e50, 0x000000, 0x000000, 1);
-            bg.fillRect(0, 0, 800, 600);
+        
+        preload() { 
+            // Cargar los 8 patos individuales
+            for(let i=1; i<=8; i++) {
+                this.load.image('pato'+i, 'pato'+i+'.png');
+            }
+            // Cargar TU fondo de muchos patos
+            this.load.image('fondo_patos', 'fondo_patos.png');
+        }
 
-            this.add.text(400, 200, 'SQUEAK\nSQUAD', {
+        create() {
+            // 1. FONDO CAÓTICO DE PATOS
+            try {
+                const bg = this.add.image(400, 300, 'fondo_patos');
+                // Ajustamos la imagen para que cubra todo (cover)
+                const scaleX = 800 / bg.width;
+                const scaleY = 600 / bg.height;
+                const scale = Math.max(scaleX, scaleY);
+                bg.setScale(scale).setScrollFactor(0);
+            } catch(e) {
+                this.add.rectangle(400, 300, 800, 600, 0xFFA500); // Naranja si falla imagen
+            }
+
+            // 2. VELO OSCURO (Para que se lea el texto)
+            this.add.rectangle(400, 300, 800, 600, 0x000000, 0.6);
+
+            // TÍTULO
+            const title = this.add.text(400, 200, 'SQUEAK\nSQUAD', {
                 fontSize: '80px', fontFamily: 'Arial Black', color: '#FFF',
-                align: 'center', stroke: '#000', strokeThickness: 10,
-                shadow: { offsetX: 5, offsetY: 5, color: '#FF00DE', blur: 10, fill: true }
+                align: 'center', stroke: '#000', strokeThickness: 10
             }).setOrigin(0.5);
 
+            // Sombra neón rosa detrás del título
+            this.tweens.add({
+                targets: title, scale: 1.05, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+
+            // BOTÓN JUGAR
             const btn = this.add.container(400, 450);
-            const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00ffaa).setAlpha(0.8);
+            const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00FF88).setStrokeStyle(4, 0xFFFFFF);
             const btnTxt = this.add.text(0, 0, 'JUGAR', { fontSize: '40px', fontFamily: 'Arial Black', color: '#000' }).setOrigin(0.5);
             btn.add([btnBg, btnTxt]);
             
-            // Animación del botón
-            this.tweens.add({ targets: btn, scale: 1.05, duration: 600, yoyo: true, repeat: -1 });
+            this.tweens.add({ targets: btn, scale: 1.05, duration: 800, yoyo: true, repeat: -1 });
 
             btn.setInteractive(new Phaser.Geom.Rectangle(-150, -40, 300, 80), Phaser.Geom.Rectangle.Contains);
             btn.once('pointerdown', () => {
@@ -97,77 +115,78 @@
     }
 
     // ============================================
-    // ESCENA DE JUEGO
+    // ESCENA DE JUEGO (Fondo Limpio Azul)
     // ============================================
     class GameScene extends Phaser.Scene {
         constructor() { super({ key: 'GameScene' }); }
 
         create() {
-            // Fondo degradado (Azul baño brillante)
+            // SUGERENCIA DE FONDO: Azul Profundo Gradiente (Agua)
             const bg = this.add.graphics();
-            bg.fillGradientStyle(0x4FACFE, 0x4FACFE, 0x00F2FE, 0x00F2FE, 1);
+            bg.fillGradientStyle(0x006994, 0x006994, 0x003366, 0x003366, 1);
             bg.fillRect(0, 0, 800, 600);
             
+            // Efecto de burbujas decorativas (código generado)
+            for(let i=0; i<20; i++) {
+                const x = Phaser.Math.Between(0, 800);
+                const y = Phaser.Math.Between(0, 600);
+                const r = Phaser.Math.Between(5, 20);
+                const bubble = this.add.circle(x, y, r, 0xFFFFFF, 0.1);
+                this.tweens.add({
+                    targets: bubble, y: y - 100, alpha: 0,
+                    duration: Phaser.Math.Between(2000, 5000),
+                    repeat: -1, yoyo: false
+                });
+            }
+
             this.sequence = [];
             this.playerSequence = [];
             this.inputBlocked = true;
             this.round = 0;
 
-            this.createDucks();
+            this.createRandomDucks();
             
-            // Texto de estado
             this.statusText = this.add.text(400, 100, 'PREPÁRATE', {
-                fontSize: '40px', fontFamily: 'Arial Black', color: '#FFF',
-                stroke: '#000', strokeThickness: 6
+                fontSize: '50px', fontFamily: 'Arial Black', color: '#FFF',
+                stroke: '#003366', strokeThickness: 8, shadow: { blur: 10, color: '#000', fill: true}
             }).setOrigin(0.5);
 
             this.time.delayedCall(1000, () => this.startRound());
         }
 
-        createDucks() {
-            // Colores vibrantes para los AROS, no para los patos
+        createRandomDucks() {
             const colors = [0xFF0055, 0x00AAFF, 0x00FF66, 0xFFAA00]; 
             const freqs = [300, 400, 500, 600];
             const xPositions = [160, 320, 480, 640];
             
+            // Selección aleatoria de 4 patos de los 8 disponibles
+            let availableDucks = [1, 2, 3, 4, 5, 6, 7, 8];
+            availableDucks.sort(() => Math.random() - 0.5);
+            let selectedDucks = availableDucks.slice(0, 4);
+
             this.ducks = [];
 
             xPositions.forEach((x, i) => {
                 const container = this.add.container(x, 350);
 
-                // 1. EL ARO DE COLOR (Base)
-                const ring = this.add.circle(0, 40, 55).setStrokeStyle(8, colors[i]);
-                const glow = this.add.circle(0, 40, 50, colors[i], 0.3).setVisible(false); // Luz interior
+                // Aros de color (más gruesos para que resalten sobre el azul)
+                const ring = this.add.circle(0, 40, 60).setStrokeStyle(8, colors[i]);
+                const glow = this.add.circle(0, 40, 55, colors[i], 0.3).setVisible(false);
 
-                // 2. EL PATO (Imagen original blanca)
-                // Ajustamos el origen al fondo (0.5, 1) para que al escalar "aplastado"
-                // se aplaste contra el suelo y no desde el centro.
-                const duckSprite = this.add.image(0, 50, 'pato').setOrigin(0.5, 1);
-                duckSprite.setDisplaySize(110, 110); // Tamaño del pato
-
-                // 3. EFECTO DE LUZ SOBRE EL PATO (Sutil)
-                // Si quieres que el pato tenga un leve tinte del color del aro:
-                // duckSprite.setTint(colors[i]); // Descomenta si prefieres tintado completo
+                const duckId = 'pato' + selectedDucks[i];
+                const duckSprite = this.add.image(0, 50, duckId).setOrigin(0.5, 1);
+                duckSprite.setDisplaySize(110, 110); 
 
                 container.add([glow, ring, duckSprite]);
                 
-                // Guardamos referencias
                 container.glow = glow;
                 container.duck = duckSprite;
                 container.freq = freqs[i];
-                container.color = colors[i];
 
-                // 4. ÁREA DE CLICK GIGANTE (SOLUCIÓN FUNCIONALIDAD)
-                // Hacemos el área transparente más grande que el dibujo
                 const hitArea = this.add.rectangle(0, 0, 140, 160, 0x000000, 0); 
                 container.add(hitArea);
-                
                 hitArea.setInteractive({ useHandCursor: true });
                 hitArea.on('pointerdown', () => this.handleInput(i));
-                
-                // Efecto hover (solo PC)
-                hitArea.on('pointerover', () => duckSprite.y = 45);
-                hitArea.on('pointerout', () => duckSprite.y = 50);
 
                 this.ducks.push(container);
             });
@@ -178,7 +197,6 @@
             this.statusText.setText('RONDA ' + this.round);
             this.sequence.push(Phaser.Math.Between(0, 3));
             this.playerSequence = [];
-            
             this.time.delayedCall(800, () => this.playSequence());
         }
 
@@ -202,35 +220,21 @@
 
         activateDuck(index) {
             const item = this.ducks[index];
-            
-            // 1. Sonido
             gameInstance.audioManager.playTone(item.freq);
-
-            // 2. Visual: El aro brilla
             item.glow.setVisible(true);
             this.tweens.add({
                 targets: item.glow, alpha: 0, duration: 400,
                 onComplete: () => { item.glow.setVisible(false); item.glow.setAlpha(0.3); }
             });
-
-            // 3. Visual: Squash & Stretch (El "Jugo")
-            // El pato se estira hacia arriba y luego vuelve
             this.tweens.add({
-                targets: item.duck,
-                scaleY: 1.2, // Se estira
-                scaleX: 0.8, // Se adelgaza
-                y: 30,       // Salta un poco
-                duration: 100,
-                yoyo: true,
-                ease: 'Quad.easeOut'
+                targets: item.duck, scaleY: 1.2, scaleX: 0.8, y: 30,
+                duration: 100, yoyo: true, ease: 'Quad.easeOut'
             });
         }
 
         handleInput(index) {
             if (this.inputBlocked) return;
-
             this.activateDuck(index);
-            
             const expected = this.sequence[this.playerSequence.length];
             if (index === expected) {
                 this.playerSequence.push(index);
@@ -240,12 +244,41 @@
                     this.time.delayedCall(1000, () => this.startRound());
                 }
             } else {
-                this.inputBlocked = true;
-                this.cameras.main.shake(300, 0.02); // Temblor de pantalla
-                gameInstance.audioManager.playTone(150, 'sawtooth');
-                this.statusText.setText('¡ERROR!');
-                this.time.delayedCall(1500, () => this.scene.start('TitleScene'));
+                this.scene.start('GameOverScene', { score: this.round });
             }
+        }
+    }
+
+    // ============================================
+    // GAME OVER (Fondo Lleno de Patos + Velo Rojo)
+    // ============================================
+    class GameOverScene extends Phaser.Scene {
+        constructor() { super({ key: 'GameOverScene' }); }
+        create(data) {
+            // 1. FONDO DE PATOS
+            const bg = this.add.image(400, 300, 'fondo_patos1');
+            const scaleX = 800 / bg.width;
+            const scaleY = 600 / bg.height;
+            const scale = Math.max(scaleX, scaleY);
+            bg.setScale(scale);
+
+            // 2. VELO ROJO OSCURO (Dramático)
+            this.add.rectangle(400, 300, 800, 600, 0x330000, 0.8);
+
+            this.add.text(400, 200, 'GAME OVER', { 
+                fontSize: '64px', fontFamily: 'Arial Black', color: '#FF4444', stroke: '#FFF', strokeThickness: 4 
+            }).setOrigin(0.5);
+            
+            this.add.text(400, 300, 'Ronda: ' + data.score, { 
+                fontSize: '40px', color: '#FFF', fontFamily: 'Arial'
+            }).setOrigin(0.5);
+            
+            const btn = this.add.text(400, 450, 'REINTENTAR', { 
+                fontSize: '28px', backgroundColor: '#FFF', color: '#000', padding: {x:20, y:10}, fontFamily: 'Arial Black'
+            }).setOrigin(0.5);
+            
+            btn.setInteractive({ useHandCursor: true });
+            btn.on('pointerdown', () => this.scene.start('GameScene'));
         }
     }
 
@@ -257,7 +290,7 @@
             width: 800,
             height: 600
         },
-        scene: [TitleScene, GameScene]
+        scene: [TitleScene, GameScene, GameOverScene]
     };
 
     new Phaser.Game(config);
