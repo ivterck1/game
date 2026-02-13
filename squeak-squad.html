@@ -2,8 +2,8 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squeak Squad - GIANT DUCKS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Squeak Squad - Mobile Fullscreen</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,10 +12,10 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            background: #222;
+            background: #000;
             font-family: 'Arial Black', sans-serif;
             overflow: hidden;
-            touch-action: none;
+            touch-action: none; /* Bloquea zoom en móviles */
         }
         #game-container {
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
@@ -68,6 +68,7 @@
         }
 
         create() {
+            // Fondo
             try {
                 const bg = this.add.image(400, 300, 'fondo_patos');
                 const scale = Math.max(800 / bg.width, 600 / bg.height);
@@ -84,19 +85,30 @@
 
             this.tweens.add({ targets: title, scale: 1.05, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
+            // BOTÓN JUGAR
             const btn = this.add.container(400, 450);
             const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00FF88).setStrokeStyle(4, 0xFFFFFF);
             const btnTxt = this.add.text(0, 0, 'JUGAR', { fontSize: '40px', fontFamily: 'Arial Black', color: '#000' }).setOrigin(0.5);
             btn.add([btnBg, btnTxt]);
             
             this.tweens.add({ targets: btn, scale: 1.05, duration: 800, yoyo: true, repeat: -1 });
+
             btn.setInteractive(new Phaser.Geom.Rectangle(-150, -40, 300, 80), Phaser.Geom.Rectangle.Contains);
-            btn.once('pointerdown', () => { gameInstance.audioManager.init(); this.scene.start('GameScene'); });
+            
+            btn.once('pointerdown', () => {
+                // --- ACTIVAR PANTALLA COMPLETA ---
+                if (this.scale.isEnabled && !this.scale.isFullscreen) {
+                    this.scale.startFullscreen();
+                }
+
+                gameInstance.audioManager.init();
+                this.scene.start('GameScene');
+            });
         }
     }
 
     // ============================================
-    // ESCENA DE JUEGO (MODO PATOS GIGANTES)
+    // ESCENA DE JUEGO (PATOS MASIVOS)
     // ============================================
     class GameScene extends Phaser.Scene {
         constructor() { super({ key: 'GameScene' }); }
@@ -113,6 +125,7 @@
 
             this.createRandomDucks();
             
+            // Subimos el texto un poco para dejar espacio a los patos gigantes
             this.statusText = this.add.text(400, 80, 'PREPÁRATE', {
                 fontSize: '50px', fontFamily: 'Arial Black', color: '#FFF',
                 stroke: '#003366', strokeThickness: 8
@@ -125,8 +138,7 @@
             const colors = [0xFF0055, 0x00AAFF, 0x00FF66, 0xFFAA00]; 
             const freqs = [300, 400, 500, 600];
             
-            // --- CAMBIO 1: NUEVAS POSICIONES EXPANDIDAS ---
-            // Usamos centros en 100, 300, 500, 700 para aprovechar los 800px completos
+            // Posiciones distribuidas en todo el ancho
             const xPositions = [100, 300, 500, 700]; 
             
             let availableDucks = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -136,19 +148,19 @@
             this.ducks = [];
 
             xPositions.forEach((x, i) => {
-                // --- CAMBIO 2: POSICIÓN Y MÁS BAJA ---
-                // Bajamos los patos a Y=400 para que tengan espacio arriba al saltar
-                const container = this.add.container(x, 400);
+                const container = this.add.container(x, 420); // Bajamos un poco la base
 
-                const glow = this.add.circle(0, -30, 100, colors[i], 0.7).setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
+                const glow = this.add.circle(0, -50, 130, colors[i], 0.7)
+                    .setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
 
                 const duckId = 'pato' + selectedDucks[i];
-                const duckSprite = this.add.image(0, 50, duckId).setOrigin(0.5, 1);
-                
-                // --- CAMBIO 3: TAMAÑO OBJETIVO MASIVO ---
-                // Forzamos un ancho de 200px (el máximo posible por columna)
-                // Si tu imagen tiene transparencia, esto hará que el dibujo se vea grande.
-                const targetWidth = 200; 
+                const duckSprite = this.add.image(0, 0, duckId).setOrigin(0.5, 0.8); 
+                // Origin 0.8 en Y ayuda a que al escalar se sienta "plantado" en el suelo
+
+                // --- ESCALADO AGRESIVO ---
+                // Forzamos que la imagen mida 350px de ancho.
+                // Aunque tenga transparencia, el pato debería verse mucho más grande.
+                const targetWidth = 350; 
                 const scaleFactor = targetWidth / duckSprite.width;
                 duckSprite.setScale(scaleFactor);
 
@@ -158,15 +170,11 @@
                 container.duck = duckSprite;
                 container.freq = freqs[i];
 
-                // Área de clic ajustada al nuevo tamaño gigante
-                const hitArea = this.add.rectangle(0, -50, 200, 250, 0x000000, 0); 
+                // Área de clic muy alta para asegurar que se pueda tocar
+                const hitArea = this.add.rectangle(0, -80, 190, 300, 0x000000, 0); 
                 container.add(hitArea);
                 hitArea.setInteractive({ useHandCursor: true });
                 hitArea.on('pointerdown', () => this.handleInput(i));
-                
-                // Animación simple al pasar el mouse
-                hitArea.on('pointerover', () => duckSprite.y = 40);
-                hitArea.on('pointerout', () => duckSprite.y = 50);
 
                 this.ducks.push(container);
             });
@@ -207,7 +215,10 @@
             this.tweens.add({ targets: item.glow, alpha: 0, duration: 500, onComplete: () => item.glow.setVisible(false) });
 
             this.tweens.add({
-                targets: item.duck, scaleY: item.duck.scaleY * 1.2, scaleX: item.duck.scaleX * 0.85, y: 10,
+                targets: item.duck, 
+                scaleY: item.duck.scaleY * 1.2, 
+                scaleX: item.duck.scaleX * 0.9, 
+                y: -50, // Salto más alto visualmente
                 duration: 100, yoyo: true, ease: 'Quad.easeOut'
             });
         }
@@ -245,15 +256,24 @@
             this.add.rectangle(400, 300, 800, 600, 0x330000, 0.8);
             this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', fontFamily: 'Arial Black', color: '#FF4444', stroke: '#FFF', strokeThickness: 4 }).setOrigin(0.5);
             this.add.text(400, 300, 'Ronda: ' + data.score, { fontSize: '40px', color: '#FFF', fontFamily: 'Arial' }).setOrigin(0.5);
+            
             const btn = this.add.text(400, 450, 'REINTENTAR', { fontSize: '28px', backgroundColor: '#FFF', color: '#000', padding: {x:20, y:10}, fontFamily: 'Arial Black' }).setOrigin(0.5);
             btn.setInteractive({ useHandCursor: true });
             btn.on('pointerdown', () => this.scene.start('GameScene'));
         }
     }
 
+    // Configuración ajustada para Fullscreen
     const config = {
         type: Phaser.AUTO,
-        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 800, height: 600 },
+        scale: {
+            mode: Phaser.Scale.FIT, // Ajusta al tamaño visible
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: 800,
+            height: 600,
+            // Permite pantalla completa
+            fullscreenTarget: 'game-container'
+        },
         scene: [TitleScene, GameScene, GameOverScene]
     };
     new Phaser.Game(config);
