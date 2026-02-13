@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squeak Squad - Big Ducks Edition</title>
+    <title>Squeak Squad - GIANT DUCKS</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -63,25 +63,18 @@
         constructor() { super({ key: 'TitleScene' }); }
         
         preload() { 
-            // Cargar los 8 patos
-            for(let i=1; i<=8; i++) {
-                this.load.image('pato'+i, 'pato'+i+'.png');
-            }
-            // Cargar fondo
+            for(let i=1; i<=8; i++) { this.load.image('pato'+i, 'pato'+i+'.png'); }
             this.load.image('fondo_patos', 'fondo_patos.png');
         }
 
         create() {
             try {
                 const bg = this.add.image(400, 300, 'fondo_patos');
-                const scaleX = 800 / bg.width;
-                const scaleY = 600 / bg.height;
-                const scale = Math.max(scaleX, scaleY);
+                const scale = Math.max(800 / bg.width, 600 / bg.height);
                 bg.setScale(scale).setScrollFactor(0);
             } catch(e) {
                 this.add.rectangle(400, 300, 800, 600, 0xFFA500);
             }
-
             this.add.rectangle(400, 300, 800, 600, 0x000000, 0.6);
 
             const title = this.add.text(400, 200, 'SQUEAK\nSQUAD', {
@@ -89,9 +82,7 @@
                 align: 'center', stroke: '#000', strokeThickness: 10
             }).setOrigin(0.5);
 
-            this.tweens.add({
-                targets: title, scale: 1.05, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: title, scale: 1.05, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
             const btn = this.add.container(400, 450);
             const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00FF88).setStrokeStyle(4, 0xFFFFFF);
@@ -99,17 +90,13 @@
             btn.add([btnBg, btnTxt]);
             
             this.tweens.add({ targets: btn, scale: 1.05, duration: 800, yoyo: true, repeat: -1 });
-
             btn.setInteractive(new Phaser.Geom.Rectangle(-150, -40, 300, 80), Phaser.Geom.Rectangle.Contains);
-            btn.once('pointerdown', () => {
-                gameInstance.audioManager.init();
-                this.scene.start('GameScene');
-            });
+            btn.once('pointerdown', () => { gameInstance.audioManager.init(); this.scene.start('GameScene'); });
         }
     }
 
     // ============================================
-    // ESCENA DE JUEGO
+    // ESCENA DE JUEGO (MODO PATOS GIGANTES)
     // ============================================
     class GameScene extends Phaser.Scene {
         constructor() { super({ key: 'GameScene' }); }
@@ -119,19 +106,6 @@
             bg.fillGradientStyle(0x006994, 0x006994, 0x003366, 0x003366, 1);
             bg.fillRect(0, 0, 800, 600);
             
-            // Burbujas
-            for(let i=0; i<20; i++) {
-                const x = Phaser.Math.Between(0, 800);
-                const y = Phaser.Math.Between(0, 600);
-                const r = Phaser.Math.Between(5, 20);
-                const bubble = this.add.circle(x, y, r, 0xFFFFFF, 0.1);
-                this.tweens.add({
-                    targets: bubble, y: y - 100, alpha: 0,
-                    duration: Phaser.Math.Between(2000, 5000),
-                    repeat: -1, yoyo: false
-                });
-            }
-
             this.sequence = [];
             this.playerSequence = [];
             this.inputBlocked = true;
@@ -139,9 +113,9 @@
 
             this.createRandomDucks();
             
-            this.statusText = this.add.text(400, 100, 'PREPÁRATE', {
+            this.statusText = this.add.text(400, 80, 'PREPÁRATE', {
                 fontSize: '50px', fontFamily: 'Arial Black', color: '#FFF',
-                stroke: '#003366', strokeThickness: 8, shadow: { blur: 10, color: '#000', fill: true}
+                stroke: '#003366', strokeThickness: 8
             }).setOrigin(0.5);
 
             this.time.delayedCall(1000, () => this.startRound());
@@ -150,7 +124,10 @@
         createRandomDucks() {
             const colors = [0xFF0055, 0x00AAFF, 0x00FF66, 0xFFAA00]; 
             const freqs = [300, 400, 500, 600];
-            const xPositions = [160, 320, 480, 640]; // Centros de columna
+            
+            // --- CAMBIO 1: NUEVAS POSICIONES EXPANDIDAS ---
+            // Usamos centros en 100, 300, 500, 700 para aprovechar los 800px completos
+            const xPositions = [100, 300, 500, 700]; 
             
             let availableDucks = [1, 2, 3, 4, 5, 6, 7, 8];
             availableDucks.sort(() => Math.random() - 0.5);
@@ -159,39 +136,37 @@
             this.ducks = [];
 
             xPositions.forEach((x, i) => {
-                const container = this.add.container(x, 350);
+                // --- CAMBIO 2: POSICIÓN Y MÁS BAJA ---
+                // Bajamos los patos a Y=400 para que tengan espacio arriba al saltar
+                const container = this.add.container(x, 400);
 
-                // 1. LUZ TRASERA (Más grande y difusa, sin borde)
-                const glow = this.add.circle(0, -20, 85, colors[i], 0.6)
-                    .setVisible(false)
-                    .setBlendMode(Phaser.BlendModes.ADD);
+                const glow = this.add.circle(0, -30, 100, colors[i], 0.7).setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
 
-                // 2. PATO GIGANTE
                 const duckId = 'pato' + selectedDucks[i];
-                const duckSprite = this.add.image(0, 60, duckId).setOrigin(0.5, 1);
+                const duckSprite = this.add.image(0, 50, duckId).setOrigin(0.5, 1);
                 
-                // --- AJUSTE DE TAMAÑO GIGANTE ---
-                // 145px de ancho deja poco espacio entre ellos, se verán enormes
+                // --- CAMBIO 3: TAMAÑO OBJETIVO MASIVO ---
+                // Forzamos un ancho de 200px (el máximo posible por columna)
+                // Si tu imagen tiene transparencia, esto hará que el dibujo se vea grande.
                 const targetWidth = 200; 
                 const scaleFactor = targetWidth / duckSprite.width;
                 duckSprite.setScale(scaleFactor);
 
-                // Agregamos solo glow y pato (SIN ARO)
                 container.add([glow, duckSprite]);
                 
                 container.glow = glow;
                 container.duck = duckSprite;
                 container.freq = freqs[i];
 
-                // 3. ÁREA DE CLICK (Más alta para cubrir al pato grande)
-                const hitArea = this.add.rectangle(0, -30, 150, 190, 0x000000, 0); 
+                // Área de clic ajustada al nuevo tamaño gigante
+                const hitArea = this.add.rectangle(0, -50, 200, 250, 0x000000, 0); 
                 container.add(hitArea);
                 hitArea.setInteractive({ useHandCursor: true });
-                
                 hitArea.on('pointerdown', () => this.handleInput(i));
-                // Animación hover sutil
-                hitArea.on('pointerover', () => duckSprite.y = 55);
-                hitArea.on('pointerout', () => duckSprite.y = 60);
+                
+                // Animación simple al pasar el mouse
+                hitArea.on('pointerover', () => duckSprite.y = 40);
+                hitArea.on('pointerout', () => duckSprite.y = 50);
 
                 this.ducks.push(container);
             });
@@ -227,17 +202,12 @@
             const item = this.ducks[index];
             gameInstance.audioManager.playTone(item.freq);
             
-            // Visual: Glow aparece suavemente
             item.glow.setVisible(true);
             item.glow.setAlpha(0.8);
-            this.tweens.add({
-                targets: item.glow, alpha: 0, duration: 500,
-                onComplete: () => item.glow.setVisible(false)
-            });
+            this.tweens.add({ targets: item.glow, alpha: 0, duration: 500, onComplete: () => item.glow.setVisible(false) });
 
-            // Visual: Salto "Squash"
             this.tweens.add({
-                targets: item.duck, scaleY: item.duck.scaleY * 1.2, scaleX: item.duck.scaleX * 0.85, y: 30,
+                targets: item.duck, scaleY: item.duck.scaleY * 1.2, scaleX: item.duck.scaleX * 0.85, y: 10,
                 duration: 100, yoyo: true, ease: 'Quad.easeOut'
             });
         }
@@ -265,31 +235,17 @@
     class GameOverScene extends Phaser.Scene {
         constructor() { super({ key: 'GameOverScene' }); }
         create(data) {
-            // Fondo
             try {
-                const bg = this.add.image(400, 300, 'fondo_patos'); // Corregido typo
-                const scaleX = 800 / bg.width;
-                const scaleY = 600 / bg.height;
-                const scale = Math.max(scaleX, scaleY);
+                const bg = this.add.image(400, 300, 'fondo_patos');
+                const scale = Math.max(800 / bg.width, 600 / bg.height);
                 bg.setScale(scale);
             } catch(e) {
                 this.add.rectangle(400, 300, 800, 600, 0x222);
             }
-
             this.add.rectangle(400, 300, 800, 600, 0x330000, 0.8);
-
-            this.add.text(400, 200, 'GAME OVER', { 
-                fontSize: '64px', fontFamily: 'Arial Black', color: '#FF4444', stroke: '#FFF', strokeThickness: 4 
-            }).setOrigin(0.5);
-            
-            this.add.text(400, 300, 'Ronda: ' + data.score, { 
-                fontSize: '40px', color: '#FFF', fontFamily: 'Arial'
-            }).setOrigin(0.5);
-            
-            const btn = this.add.text(400, 450, 'REINTENTAR', { 
-                fontSize: '28px', backgroundColor: '#FFF', color: '#000', padding: {x:20, y:10}, fontFamily: 'Arial Black'
-            }).setOrigin(0.5);
-            
+            this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', fontFamily: 'Arial Black', color: '#FF4444', stroke: '#FFF', strokeThickness: 4 }).setOrigin(0.5);
+            this.add.text(400, 300, 'Ronda: ' + data.score, { fontSize: '40px', color: '#FFF', fontFamily: 'Arial' }).setOrigin(0.5);
+            const btn = this.add.text(400, 450, 'REINTENTAR', { fontSize: '28px', backgroundColor: '#FFF', color: '#000', padding: {x:20, y:10}, fontFamily: 'Arial Black' }).setOrigin(0.5);
             btn.setInteractive({ useHandCursor: true });
             btn.on('pointerdown', () => this.scene.start('GameScene'));
         }
@@ -297,15 +253,9 @@
 
     const config = {
         type: Phaser.AUTO,
-        scale: {
-            mode: Phaser.Scale.FIT,
-            autoCenter: Phaser.Scale.CENTER_BOTH,
-            width: 800,
-            height: 600
-        },
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 800, height: 600 },
         scene: [TitleScene, GameScene, GameOverScene]
     };
-
     new Phaser.Game(config);
     </script>
 </body>
