@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squeak Squad - Duck Chaos</title>
+    <title>Squeak Squad - Big Ducks Edition</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,48 +57,42 @@
     gameInstance.audioManager = new AudioManager();
 
     // ============================================
-    // ESCENA TÍTULO (Fondo Lleno de Patos)
+    // ESCENA TÍTULO
     // ============================================
     class TitleScene extends Phaser.Scene {
         constructor() { super({ key: 'TitleScene' }); }
         
         preload() { 
-            // Cargar los 8 patos individuales
+            // Cargar los 8 patos
             for(let i=1; i<=8; i++) {
                 this.load.image('pato'+i, 'pato'+i+'.png');
             }
-            // Cargar TU fondo de muchos patos
+            // Cargar fondo
             this.load.image('fondo_patos', 'fondo_patos.png');
         }
 
         create() {
-            // 1. FONDO CAÓTICO DE PATOS
             try {
                 const bg = this.add.image(400, 300, 'fondo_patos');
-                // Ajustamos la imagen para que cubra todo (cover)
                 const scaleX = 800 / bg.width;
                 const scaleY = 600 / bg.height;
                 const scale = Math.max(scaleX, scaleY);
                 bg.setScale(scale).setScrollFactor(0);
             } catch(e) {
-                this.add.rectangle(400, 300, 800, 600, 0xFFA500); // Naranja si falla imagen
+                this.add.rectangle(400, 300, 800, 600, 0xFFA500);
             }
 
-            // 2. VELO OSCURO (Para que se lea el texto)
             this.add.rectangle(400, 300, 800, 600, 0x000000, 0.6);
 
-            // TÍTULO
             const title = this.add.text(400, 200, 'SQUEAK\nSQUAD', {
                 fontSize: '80px', fontFamily: 'Arial Black', color: '#FFF',
                 align: 'center', stroke: '#000', strokeThickness: 10
             }).setOrigin(0.5);
 
-            // Sombra neón rosa detrás del título
             this.tweens.add({
                 targets: title, scale: 1.05, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
             });
 
-            // BOTÓN JUGAR
             const btn = this.add.container(400, 450);
             const btnBg = this.add.rectangle(0, 0, 300, 80, 0x00FF88).setStrokeStyle(4, 0xFFFFFF);
             const btnTxt = this.add.text(0, 0, 'JUGAR', { fontSize: '40px', fontFamily: 'Arial Black', color: '#000' }).setOrigin(0.5);
@@ -115,18 +109,17 @@
     }
 
     // ============================================
-    // ESCENA DE JUEGO (Fondo Limpio Azul)
+    // ESCENA DE JUEGO
     // ============================================
     class GameScene extends Phaser.Scene {
         constructor() { super({ key: 'GameScene' }); }
 
         create() {
-            // SUGERENCIA DE FONDO: Azul Profundo Gradiente (Agua)
             const bg = this.add.graphics();
             bg.fillGradientStyle(0x006994, 0x006994, 0x003366, 0x003366, 1);
             bg.fillRect(0, 0, 800, 600);
             
-            // Efecto de burbujas decorativas (código generado)
+            // Burbujas
             for(let i=0; i<20; i++) {
                 const x = Phaser.Math.Between(0, 800);
                 const y = Phaser.Math.Between(0, 600);
@@ -157,9 +150,8 @@
         createRandomDucks() {
             const colors = [0xFF0055, 0x00AAFF, 0x00FF66, 0xFFAA00]; 
             const freqs = [300, 400, 500, 600];
-            const xPositions = [160, 320, 480, 640];
+            const xPositions = [160, 320, 480, 640]; // Centros de columna
             
-            // Selección aleatoria de 4 patos de los 8 disponibles
             let availableDucks = [1, 2, 3, 4, 5, 6, 7, 8];
             availableDucks.sort(() => Math.random() - 0.5);
             let selectedDucks = availableDucks.slice(0, 4);
@@ -169,31 +161,37 @@
             xPositions.forEach((x, i) => {
                 const container = this.add.container(x, 350);
 
-                // Aros de color (más gruesos para que resalten sobre el azul)
-                const ring = this.add.circle(0, 40, 60).setStrokeStyle(8, colors[i]);
-                const glow = this.add.circle(0, 40, 55, colors[i], 0.3).setVisible(false);
+                // 1. LUZ TRASERA (Más grande y difusa, sin borde)
+                const glow = this.add.circle(0, -20, 85, colors[i], 0.6)
+                    .setVisible(false)
+                    .setBlendMode(Phaser.BlendModes.ADD);
 
+                // 2. PATO GIGANTE
                 const duckId = 'pato' + selectedDucks[i];
-                const duckSprite = this.add.image(0, 50, duckId).setOrigin(0.5, 1);
-                // --- INICIO CORRECCIÓN DE DEFORMACIÓN ---
-                // Definimos un ancho objetivo (por ejemplo, 100px)
-                const targetWidth = 100;
-                // Calculamos el factor de escala necesario para llegar a ese ancho
+                const duckSprite = this.add.image(0, 60, duckId).setOrigin(0.5, 1);
+                
+                // --- AJUSTE DE TAMAÑO GIGANTE ---
+                // 145px de ancho deja poco espacio entre ellos, se verán enormes
+                const targetWidth = 145; 
                 const scaleFactor = targetWidth / duckSprite.width;
-                // Aplicamos la escala. Esto ajusta ancho y alto proporcionalmente.
                 duckSprite.setScale(scaleFactor);
-                // --- FIN CORRECCIÓN ---
 
-                container.add([glow, ring, duckSprite]);
+                // Agregamos solo glow y pato (SIN ARO)
+                container.add([glow, duckSprite]);
                 
                 container.glow = glow;
                 container.duck = duckSprite;
                 container.freq = freqs[i];
 
-                const hitArea = this.add.rectangle(0, 0, 140, 160, 0x000000, 0); 
+                // 3. ÁREA DE CLICK (Más alta para cubrir al pato grande)
+                const hitArea = this.add.rectangle(0, -30, 150, 190, 0x000000, 0); 
                 container.add(hitArea);
                 hitArea.setInteractive({ useHandCursor: true });
+                
                 hitArea.on('pointerdown', () => this.handleInput(i));
+                // Animación hover sutil
+                hitArea.on('pointerover', () => duckSprite.y = 55);
+                hitArea.on('pointerout', () => duckSprite.y = 60);
 
                 this.ducks.push(container);
             });
@@ -228,13 +226,18 @@
         activateDuck(index) {
             const item = this.ducks[index];
             gameInstance.audioManager.playTone(item.freq);
+            
+            // Visual: Glow aparece suavemente
             item.glow.setVisible(true);
+            item.glow.setAlpha(0.8);
             this.tweens.add({
-                targets: item.glow, alpha: 0, duration: 400,
-                onComplete: () => { item.glow.setVisible(false); item.glow.setAlpha(0.3); }
+                targets: item.glow, alpha: 0, duration: 500,
+                onComplete: () => item.glow.setVisible(false)
             });
+
+            // Visual: Salto "Squash"
             this.tweens.add({
-                targets: item.duck, scaleY: 1.2, scaleX: 0.8, y: 30,
+                targets: item.duck, scaleY: item.duck.scaleY * 1.2, scaleX: item.duck.scaleX * 0.85, y: 30,
                 duration: 100, yoyo: true, ease: 'Quad.easeOut'
             });
         }
@@ -257,19 +260,22 @@
     }
 
     // ============================================
-    // GAME OVER (Fondo Lleno de Patos + Velo Rojo)
+    // GAME OVER
     // ============================================
     class GameOverScene extends Phaser.Scene {
         constructor() { super({ key: 'GameOverScene' }); }
         create(data) {
-            // 1. FONDO DE PATOS
-            const bg = this.add.image(400, 300, 'fondo_patos1');
-            const scaleX = 800 / bg.width;
-            const scaleY = 600 / bg.height;
-            const scale = Math.max(scaleX, scaleY);
-            bg.setScale(scale);
+            // Fondo
+            try {
+                const bg = this.add.image(400, 300, 'fondo_patos'); // Corregido typo
+                const scaleX = 800 / bg.width;
+                const scaleY = 600 / bg.height;
+                const scale = Math.max(scaleX, scaleY);
+                bg.setScale(scale);
+            } catch(e) {
+                this.add.rectangle(400, 300, 800, 600, 0x222);
+            }
 
-            // 2. VELO ROJO OSCURO (Dramático)
             this.add.rectangle(400, 300, 800, 600, 0x330000, 0.8);
 
             this.add.text(400, 200, 'GAME OVER', { 
